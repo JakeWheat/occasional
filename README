@@ -1,5 +1,20 @@
 A demo system for running concurrent and distributed processes in
-Python
+Python. Not yet usable.
+
+Roadmap
+-------
+
+Implement process exit values
+
+Mailbox system + selective receive
+
+Spawn with shared listening port demo
+
+Local system with spawn, send, receive, monitor
+
+Distributed
+
+Do and document examples below
 
 Install
 -------
