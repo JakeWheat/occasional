@@ -191,3 +191,41 @@ def get_socket_info(pid):
         return get_unix_socket_info(pid)
     else:
         raise Exception("unsupported socket type {socket_type}")
+
+
+##############################################################################
+
+# tests
+
+"""x
+
+TODO:
+
+create example outputs for each of the proc reads
+then add tests which read these and produce the right results
+
+do it for listen, connected, and for unix and tcp sockets
+
+do variations with the race conditions with a connection disappearing
+or appearing in between reads of different procs
+-> to document what happens, and make sure it's reasonable
+
+get some sample output when connected to remote connection either as
+the server or client, then can check these work nice
+
+do simple full tests - check the non mocked proc read
+create a process with no connections and check
+start a network server (both flavours), check
+then connect with a client, check both
+
+
+design a proper api:
+
+the testing isn't trying to tell which process is connected to which
+
+since wrote the code for this, could add some tests for this sort of thing
+just to keep the code and not bitrot it - it might be useful for some
+troubleshooting utils later
+
+
+"""

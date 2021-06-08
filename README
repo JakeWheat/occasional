@@ -1,6 +1,22 @@
-A system for running concurrent and distributed processes
+A demo system for running concurrent and distributed processes in
+Python
 
-Examples TODO
+Install
+-------
+
+install Python 3.10 or later
+  -> before 3.10 is released you need the beta version
+dependencies:
+pip3 install python-prctl
+pip3 install dill
+
+Run the tests:
+
+./test_framework.py
+
+
+Examples (TODO)
+---------------
 
 running lots of tasks in parallel, three versions:
 simplest possible in python
@@ -18,21 +34,11 @@ running "server" exes, native and non native
   logging exit reasons
   providing monitoring and stuff
 
-test framework
-
-maybe a simple build system demo?
-  -> run a lot of tasks
-  some tasks are dependent on other tasks completion
-  you want to use a specific amount of concurrency for heavy tasks
-    (or even do categorization X CPU heavy tasks and Y IO heavy tasks)
-  to demo using the system a bit more intensively, not as a non toy
-  build system
-  
-
 Theory
+------
 
 A concurrency/distributed framework demo based on some ideas from
-Erlang, built in Python, uses Linux processes (and not posix threads
+Erlang, built in Python, uses Linux processes (and not Posix threads
 or a green threads system).
 
 The most critical aspect of the design is the reliable detection of
@@ -55,4 +61,5 @@ It is a usable system in its own right, it's also designed to be a
 demo of one way to use Linux processes and sockets to create a system
 like this, that could be ported to other programming languages.
 
-
+It doesn't try to emulate the very fast process spawning and very fast
+message passing of Erlang.

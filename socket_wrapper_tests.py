@@ -254,7 +254,7 @@ import random
 import tempfile
 import socket_wrapper
 import test_framework
-from get_proc_socket_info import get_socket_info
+import get_proc_socket_info
 
 dill.settings['recurse'] = True
 
@@ -565,25 +565,32 @@ def sort_list(l):
     l1.sort()
     return l1
 
-def assert_sockets(trp, p, pid, ts):
-    s = get_socket_info(pid)
-    sv = summarize_sockets(s)
-    if sort_list(sv) != sort_list(ts):
-        trp.fail(f"{p} sockets expected {ts} got {s}")
-    else:
-        trp.tpass(f"{p} sockets check {ts}")
-    
-def pred_listening_server_sockets(s):
-    if len(s) != 1:
-        return f"server has one socket {s}"
-    if s[0]['type'] != 'listen':
-        return f"server socket is listen {s}"
-    
+# todo: refactor all this better in to the module
+
 def summarize_sockets(s):
     ret = []
     for i in s:
         ret.append(i['type'])
     return ret
+
+def get_sockets(pid):
+    x = summarize_sockets(get_proc_socket_info.get_socket_info(pid))
+    # hack to remove the connection for the test framework
+    if 'connection' in x:
+        x.remove('connection')
+    return x
+
+def assert_sockets(trp, p, pid, ts):
+    sv = get_sockets(pid)
+    if sort_list(sv) != sort_list(ts):
+        trp.fail(f"{p} sockets expected {ts} got {sv}")
+    else:
+        trp.tpass(f"{p} sockets check {ts}")
+    
+def pred_listening_server_sockets(s):
+    if s != ['listen']:
+        return f"one server socket is listen {s}"
+    
     
 def check_sockets_predicate_retry(trp, msg, pred, pid):
     # check if pred(sockets) is true
@@ -593,7 +600,8 @@ def check_sockets_predicate_retry(trp, msg, pred, pid):
     # kill and resource cleanup
     p = None
     for i in range(5):
-        s = get_socket_info(pid)
+        #s = get_proc_socket_info.get_socket_info(pid)
+        s = get_sockets(pid)
         p = pred_listening_server_sockets(s)
         if p is None:
             trp.tpass(msg)
@@ -702,7 +710,7 @@ def test_server_trivial_connect(trp):
     # start the server
     (server_p, server_receive_queue, server_send_queue) = run_server()
     trp.assert_true("check server pid running", is_process_running(server_p.pid))
-    trp.assert_equal("server has no sockets", [], get_socket_info(server_p.pid))
+    trp.assert_equal("server has no sockets", [], get_sockets(server_p.pid))
 
     # ask it to listen
     # check the status
@@ -733,7 +741,7 @@ def test_server_trivial_connect(trp):
 
     server_send_queue.put(("unlisten",))
     trp.assert_equal("unlistening status", ("unlistening",), server_receive_queue.get())
-    trp.assert_equal("server has no sockets", [], get_socket_info(server_p.pid))
+    trp.assert_equal("server has no sockets", [], get_sockets(server_p.pid))
 
     server_send_queue.put(("close",))
     # close the server, check the status return
@@ -762,7 +770,7 @@ def test_client_trivial_connect(trp):
 
     (client_p, client_receive_queue, client_send_queue) = run_client()
     trp.assert_true("check client pid running", is_process_running(client_p.pid))
-    trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+    trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
 
     # connect the client
@@ -792,7 +800,7 @@ def test_client_trivial_connect(trp):
     # check the sockets
     client_send_queue.put(("disconnect",))
     trp.assert_equal("client disconnected status", (("disconnected",)), client_receive_queue.get())
-    trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+    trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
     trp.assert_equal("server registers disconnect", ("disconnected",), server_receive_queue.get())
 
@@ -887,7 +895,7 @@ def test_server_close(trp):
         server_send_queue.put(("close",))
         server_p.join()
         trp.assert_equal("client disconnected status", (("disconnected",)), client_receive_queue.get())
-        trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+        trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
 
 def test_client_close(trp):
@@ -931,7 +939,7 @@ def test_client_send_after_disconnect(trp):
         trp.assert_equal("client registers server disconnect", ('disconnected',), client_receive_queue.get())
         trp.assert_equal("client gives error sending after server disconnect", ('error', 'not-connected'), client_receive_queue.get())
 
-        trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+        trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
 
 def test_send_malformed_netstring_from_client(trp):
@@ -1046,7 +1054,7 @@ def test_client_sigkill_disconnect(trp):
         trp.assert_true("server process not running", is_process_exited_race(server_p.pid))
         trp.assert_equal("client disconnnected status",
                          (("disconnected",)), client_receive_queue.get())
-        trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+        trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
     
 
 def test_split_message(trp):
@@ -1118,7 +1126,7 @@ def test_client_sends_half_message_kill_server(trp):
         time.sleep(short_wait)
         client_send_queue.put(("send-special", x[mid:]))
 
-        trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+        trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
         trp.assert_equal("client gets disconnected status",
                         ("disconnected",),
@@ -1144,7 +1152,7 @@ def test_server_sends_half_message_kill_server(trp):
         trp.assert_true("server process not running", is_process_exited_race(server_p.pid))
         time.sleep(short_wait)
 
-        trp.assert_equal("client has no sockets", [], get_socket_info(client_p.pid))
+        trp.assert_equal("client has no sockets", [], get_sockets(client_p.pid))
 
         check_bad_message_send(trp, client_receive_queue, "read_netstring")
 
