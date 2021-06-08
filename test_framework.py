@@ -140,7 +140,7 @@ def run_suite(addr, f):
         ts.run()
         ts.finish()
 
-    
+
 class TestServer():
 
     def __init__(self):
@@ -163,8 +163,33 @@ class TestServer():
         self.server_process.join()
 
 
+class AssertVariations():
+    def assert_equal(self, msg, exp, got):
+        if exp == got:
+            self.tpass(msg)
+        else:
+            self.fail(f"{msg} expected {exp} got {got}")
+
+    def assert_true(self, msg, b):
+        if b:
+            self.tpass(msg)
+        else:
+            self.fail(msg)
+
+    def assert_false(self, msg, b):
+        if b:
+            self.fail(msg)
+        else:
+            self.tpass(msg)
+            
+    def assert_pred(self, msg, pred, v):
+        if pred(v):
+            self.tpass(msg)
+        else:
+            self.fail(f"{msg} failed predicate: {v}")
+
         
-class TestSuiteHandle():
+class TestSuiteHandle(AssertVariations):
     def __init__(self, addr, f):
         self.connection_sock = socket_wrapper.ValueSocket() #socket_type=socket_type)
         self.connection_sock.connect(addr)
@@ -192,29 +217,12 @@ class TestSuiteHandle():
     def fail(self, msg):
         self.connection_sock.send_value(("fail", msg))
 
-    def assert_equal(self, msg, exp, got):
-        if exp == got:
-            self.tpass(msg)
-        else:
-            self.fail(f"{msg} expected {exp} got {got}")
-
-    def assert_true(self, msg, b):
-        if b:
-            self.tpass(msg)
-        else:
-            self.fail(msg)
-
-    def assert_pred(self, msg, pred, v):
-        if pred(v):
-            self.tpass(msg)
-        else:
-            self.fail(f"{msg} failed predicate: {v}")
 
 
 # same test interface without the seperate process
 # this will only work if your test code is all in the same
 # process
-class TestLocal:
+class TestLocal(AssertVariations):
     def __init__(self):
         self.results = []
         self.current_suite = None
@@ -267,24 +275,6 @@ class TestLocal:
     def fail(self, msg):
         print(f"  FAIL {msg}")
         self.current_suite_results.append(("FAIL", msg))
-
-    def assert_equal(self, msg, exp, got):
-        if exp == got:
-            self.tpass(msg)
-        else:
-            self.fail(f"{msg} expected {exp} got {got}")
-
-    def assert_true(self, msg, b):
-        if b:
-            self.tpass(msg)
-        else:
-            self.fail(msg)
-
-    def assert_pred(self, msg, pred, v):
-        if pred(v):
-            self.tpass(msg)
-        else:
-            self.fail(f"{msg} failed predicate: {v}")
 
     def run_suite(self, f):
         self.finish_current_suite()
