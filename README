@@ -6,9 +6,12 @@ running lots of tasks in parallel, three versions:
 simplest possible in python
 simplest possible which wraps an exe
 'enterprise grade' with logging, monitoring
+dynamic work queue version?
 
--> better error handling, online monitoring, easy logs, nicer ux, and
-   distributed is why you may prefer this system to gnu parallel
+  two basic ways to use this system:
+  feed stuff into a process, get out a list of commands to run
+  feed stuff into a process, get out a list of arrays to run with a function
+    or a list of functions to be called
 
 running "server" exes, native and non native
   restarting when exit
@@ -21,7 +24,7 @@ maybe a simple build system demo?
   -> run a lot of tasks
   some tasks are dependent on other tasks completion
   you want to use a specific amount of concurrency for heavy tasks
-    (or even do categorization x cpu heavy tasks and y io heavy tasks)
+    (or even do categorization X CPU heavy tasks and Y IO heavy tasks)
   to demo using the system a bit more intensively, not as a non toy
   build system
   
@@ -30,13 +33,17 @@ Theory
 
 A concurrency/distributed framework demo based on some ideas from
 Erlang, built in Python, uses Linux processes (and not posix threads
-or a green threads system). The most critical aspect of the design is
-the reliable detection of spawned process exit with the reason why.
+or a green threads system).
 
-* you spawn a new process using a function to run without extra boilerplate
-* you get an inbox with that process
-* the system uses simple message passing with native values
-* system processes are Linux processes
+The most critical aspect of the design is the reliable detection of
+spawned process exit with the reason why.
+
+* you spawn a new process using a Python function to run as the new
+  process with minimal boilerplate
+* you get an mailbox with that process that can receive messages
+* the system uses simple message passing with native values, you pass
+  mailboxes around as values which can then be sent to
+* processes in this system are Linux processes
 * you can reliably detect when and why a process exits on the local
   machine, whatever the reason
 * you can as reliably as possible detect the same for remote processes
