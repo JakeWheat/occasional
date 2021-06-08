@@ -326,7 +326,7 @@ if __name__ == "__main__":
         for i in glob.glob("*.py"):
             modules_to_test.append(os.path.splitext(i)[0])
 
-    print(args.test_pattern)
+    #print(args.test_pattern)
     
     # test_patterns = [] #"sockets_passing_demo"]
     test_patterns_re = []
@@ -355,8 +355,10 @@ if __name__ == "__main__":
                         break
             mod = importlib.import_module(moduleName)
             ts = getattr(mod, "all_tests")
-            print(moduleName)
-            print("------")
+            first_match = True
+            if run_module:
+                print(moduleName)
+                print("------")
             try:
                 for f in ts:
                     if run_module:
@@ -364,18 +366,25 @@ if __name__ == "__main__":
                     else:
                         for r in test_patterns_re:
                             if r.match(f.__name__):
+                                if first_match:
+                                    first_match = False
+                                    print(moduleName)
+                                    print("------")
                                 t.run_suite(f)
             except:
                 # todo: turn this into a test case failure also or something
                 print(sys.exc_info()[0])
                 traceback.print_exc()
-        except:
-            if auto_mode:
+        except AttributeError as e:
+            if auto_mode and e.name == "all_tests":
                 pass
             else:
-                # todo: turn this into a test case failure also or something
                 print(sys.exc_info()[0])
                 traceback.print_exc()
+        except:
+            # todo: turn this into a test case failure also or something
+            print(sys.exc_info()[0])
+            traceback.print_exc()
     if not t.finish_tests():
         sys.exit(-1)
 
