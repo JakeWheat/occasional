@@ -2,27 +2,31 @@
 
 What are some main features of Erlang process inboxes?
 
-1. You can send messages very quickly - this is the one that this
+1. you can send messages very quickly - this is the one that this
 project isn't concerned about particularly since we send pickled
-python objects over posix sockets
+Python objects over Posix sockets which is not going to compete with
+local message passing speed in Erlang
 
 2. messages are "copied" - you don't pass shared variables/memory
 around
 
 3. there's no explicit connecting: you have an address, you send
-messages to it without connecting first
+messages to it without connecting first, there's no concept of
+connecting or disconnecting independently of sending messages
 
-4. there's one input end ("socket") that the process reads to get
-messages regardless of where they are from -> there isn't something
-like a different socket for each connection/connected client, you can
-only ever read from all inputs multiplexed into one linear stream
+4. there's one input end ("socket") that a process reads to get
+messages for it's inbox regardless of where they are from -> there
+isn't something like a different socket for each connection/connected
+client, you can only ever read from all inputs multiplexed into one
+linear stream, you read everything from a single thread
 
 5. selective receive - this allows you to read messages from your
-inbox that match a predicate, and skip over any that don't (until the
-next time you call receive)
+inbox that match a predicate, and skip over any that don't match until
+the next time you call receive
 
-6. you can send your and other addresses in messages which can then be
-used to send messages using
+6. you can send the address of your inbox or an address you received
+from someone else in a message, then the receiver of the message can
+send messages to that address
 
 """
 

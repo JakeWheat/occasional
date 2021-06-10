@@ -5,44 +5,47 @@ Supporting getting process exit values/information in the system:
 
 In Linux, a process can either have an 1 byte exit code, 0 being
 'success', and any other number being failure with the number
-indicating the failure, or it can have exited because of a signal.
+indicating which failure if you're lucky, or it can have exited
+because of a signal.
 
-To mimic Erlang, we want to supplement with a few variations:
+To mimic Erlang, we want to supplement with exiting with an arbitrary
+Python value instead of a 1 byte integer, and exiting with an arbitary
+Python value representing an error along with a stack trace where the
+error occured.
 
-returning an arbitrary python value instead of just an integer
-  -> this can be done by returning the value from the python top level
-    of the process, returning None is treated indistinguishably from
-    linux process exit code 0
-    there can also be an exit function for this like in Erlang
+Exiting with an arbitrary Python value can be done with an exit
+function, or by returning it from the top level function for the
+process. Exiting with None is indistinguishable from exiting a process
+with a Linux exit value of 0.
 
-signalling an error, so that anyone inspecting the exit value of the process
-can see an arbitrary exit value representing the error, and a stack trace
+Exiting with an error can be done with an error function, or by
+raising an exception that isn't caught and exits the process. Another
+process examining the exit value of the exited process can see the
+arbitrary error value, and the stack trace from the exit call or where
+the uncaught exception was raised.
 
-in these cases, the system arranges the linux processes to exit with
-either 0 exit code, or non zero exit code depending on whether it's a
-nice exit -> exit value/return, or a error exit: error called or
-uncaught exception
+The different between a value exit and an error exit is that the error
+exit also has a stack trace.
 
-There are a number of ways to get the python code to exit the process
-with a non zero exit code, and to exit the process using a signal.
-
-The idea is that you usually use occasional exit values, but if the
-process exits without an exit value, it preserves the linux process
-exit code, or the signal that caused the exit to be examined instead
+The idea is that you usually use the Occasional exit values -> exiting
+with a Python value or erroring with a Python value, but if a process
+exits without an exit value, it preserves the Linux process exit code,
+or the signal that caused the exit to be examined instead.
 
 Implementation
 
-There is a low level linux call that the parent of a process can use
-to get the linux process exit number or the signal that caused the
-process to exit. This is wrapped in python and the occasional
+There is a low level Linux call that the parent of a process can use
+to get the Linux process exit number or the signal that caused the
+process to exit. This is wrapped in Python and the Occasional
 implementation gets this from the multiprocessing module.
 
-For other cases - python exit value or error with value and stack trace,
-the occasional implementation running in the user process must send this
+For other cases - Python exit value or error with value and stack trace,
+the Occasional implementation running in the user process must send this
 value on the socket connection back to the central services before
 exiting the process
 the system implementation reconciles these optional exit values sent
-via message passing, and the os reported exit number/signal
+via message passing, and the os reported exit number/signal, to report
+a single exit value for a process.
 
 """
 
@@ -53,9 +56,13 @@ import socket_wrapper
 import traceback
 import yeshup
 
-##############################################################################
+class ExitValException(Exception):
+    def __init__(self,val):
+        self.val = val
 
-# the demonstration code
+class ExitErrorException(Exception):
+    def __init__(self,val):
+        self.val = val
 
 def spawn(f):
 
@@ -72,24 +79,17 @@ def spawn(f):
         except ExitValException as e:
             client_s.send_value(e.val)
         except ExitErrorException as e:
-            xx = sys.exc_info()
-            client_s.send_value(("error", e.val, traceback.extract_tb(xx[2])))
+            einf = sys.exc_info()
+            client_s.send_value(("error", e.val, traceback.extract_tb(einf[2])))
         except:
-            e = sys.exc_info()
-            client_s.send_value(("error", e[1], traceback.extract_tb(e[2])))
+            einf = sys.exc_info()
+            client_s.send_value(("error", einf[1], traceback.extract_tb(einf[2])))
             
     
     p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, f])
     p.start()
     return (p, server_s)
 
-class ExitValException(Exception):
-    def __init__(self,val):
-        self.val = val
-
-class ExitErrorException(Exception):
-    def __init__(self,val):
-        self.val = val
 
 # call in a spawned function to exit with this value
 def spawn_exit(val):
@@ -112,6 +112,7 @@ def spawn_error(val):
     # similar comments as above
     raise ExitErrorException(val)
 
+# wait for a process to exit and get it's exit value
 def wait_spawn(x):
     (p, server_s) = x
     p.join()

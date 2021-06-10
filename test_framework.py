@@ -5,6 +5,8 @@
 A test framework which supports test results from multiple concurrent
 processes
 
+This code is very temporary atm
+
 Planned:
 run tests concurrently, distributed
 logging and reports
@@ -14,12 +16,46 @@ support for running tests written in other frameworks using adaptors
   (the adaptors run the other tests' executables and get the results
    either from stdout/stderr or the log produced from the test runs)
 
-usage guide TODO:
+running tests from the command line
+-----------------------------------
 
-running tests from command line
+run all tests in current dir:
+
+> test_framework.py 
+
+Run tests matching at least one of the regexes given. A test will
+match if the pattern matches the name of the module containing the
+test or the name of the function for the test. Later it will match the
+test name or any of the test groups the test is in.
+
+> test_framework.py  -t test_trivial_sockets test_socket_accept_exit
+> test_framework.py  -t inbox_tests
+
+test without using the server, this will only work if the none of the
+test assertions run in other processes
+
+> test_framework.py --use-local
+
+other options: hide success lines, show times for every test
+
+> test_framework.py -t --hide-successes --show-times
+
 
 writing tests
+-------------
 
+def my_test(trp):
+    a = 5
+    b = test_this_function(2,3)
+    assert_equal(trp, "my assertion message", a, b)
+
+# put an all tests array in any file with tests
+# you could put the all_tests in a single place, or write
+# some auto discover based on the names of the modules and the test
+# functions quite easily
+all_tests = [my_test]
+
+see the _tests.py files for examples
 
 """
 

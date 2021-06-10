@@ -109,7 +109,7 @@ def test_simple_yeshup(trp):
     
     def run_parent():
         #print("run parent")
-        p = run_it_stdin(["./yeshup_test.py", "launch", "basic"])
+        p = run_it_stdin(["./yeshup_tests.py", "launch", "basic"])
         #p.wait()
         #print("launched")
         # parse the two pids

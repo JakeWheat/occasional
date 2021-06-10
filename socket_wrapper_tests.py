@@ -2,12 +2,6 @@
 
 """x
 
-Reimplement this all in low level c to see if there's anything python
-specific in the behaviour in python
-
-is there still a rare hang when running the tests in a loop?
-
-
 Tests todo
 
 large netstring split success and errors
@@ -256,8 +250,6 @@ import socket_wrapper
 import test_framework
 import get_proc_socket_info
 import yeshup
-
-dill.settings['recurse'] = True
 
 short_wait = 0.001
 

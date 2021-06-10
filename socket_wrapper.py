@@ -2,12 +2,15 @@
 
 """x
 
-sockets wrapper with the following purposes:
+wrapper for Python sockets (which are a thin wrapper around Posix
+sockets) with the following additions:
 
-reliable closing is easier
-anomaly handling is easier
-high level interface where you can pass python objects to sockets, and
-get them back, using the dill library
+* reliable closing is easier
+* anomaly handling is easier
+* high level interface where you can pass python objects to sockets,
+  and get them back, using the dill library
+* simple callback wrapper for socket servers
+* simple to use wrapper for sending sockets on sockets (sendmsg)
 
 """
 
