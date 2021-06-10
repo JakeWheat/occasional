@@ -27,6 +27,7 @@ import traceback
 import functools
 import sys
 import traceback
+import datetime
 
 def sysinfo_to_value(e):
     return ("".join(traceback.format_exception(*e, 0)),
@@ -39,7 +40,7 @@ def get_process_name(f):
     else:
         return f.__name__
 
-def test_server(address_sock):
+def test_server(address_sock, hide_successes, show_times):
     # create the status/results queue
     # todo: do this without queues?
     res_queue = multiprocessing.Queue()
@@ -86,12 +87,14 @@ def test_server(address_sock):
 
     def handle_suite(client_sock, nm):
         res_queue.put(("start_suite", nm))
+        suite_start_time = datetime.datetime.now()
         print(nm)
         test_results = []
         while True:
             match client_sock.receive_value():
                 case ("pass", msg):
-                    print(f"  PASS {msg}")
+                    if not hide_successes:
+                        print(f"  PASS {msg}")
                     test_results.append(("pass", msg))
                 case ("fail", msg):
                     print(f"  FAIL {msg}")
@@ -103,7 +106,11 @@ def test_server(address_sock):
                         total_tests += 1
                         if i[0] == "pass":
                             tests_passed += 1
-                    print(f"  {tests_passed} / {total_tests} passed")
+                    t = ""
+                    if show_times:
+                        elapsed = datetime.datetime.now() - suite_start_time
+                        t = " in " + show_timedelta(elapsed)
+                    print(f"  {tests_passed} / {total_tests} passed{t}")
                     res_queue.put(("suite_results", nm, (total_tests,tests_passed)))
                     client_sock.send_value(("ok",))
                 case None:
@@ -143,9 +150,9 @@ def run_suite(addr, f):
 
 class TestServer():
 
-    def __init__(self):
+    def __init__(self, hide_successes, show_times):
         (p0, p1) = socket_wrapper.value_socketpair()
-        self.server_process = multiprocessing.Process(target=test_server, args=[p1])
+        self.server_process = multiprocessing.Process(target=test_server, args=[p1,hide_successes, show_times])
         self.server_process.start()
         self.addr = p0.receive_value()
         p0.close()
@@ -217,18 +224,32 @@ class TestSuiteHandle(AssertVariations):
     def fail(self, msg):
         self.connection_sock.send_value(("fail", msg))
 
-
+def show_timedelta(d):
+    ret = ""
+    if d.days != 0:
+        ret += str(d.days) + "d"
+    # todo: split into hours and minutes also
+    if d.seconds != 0 or d.days != 0:
+        ret += str(d.seconds)
+    if d.microseconds != 0:
+        fs = d.microseconds / 1000.0 / 1000
+        if ret == "":
+            ret = format(fs, ".2f")
+        else:
+            ret += format(fs, ".2f")[1:]
+    return ret
 
 # same test interface without the seperate process
 # this will only work if your test code is all in the same
 # process
 class TestLocal(AssertVariations):
-    def __init__(self):
+    def __init__(self, hide_successes, show_times):
         self.results = []
         self.current_suite = None
         self.current_suite_results = []
         self.addr = self
-
+        self.hide_successes = hide_successes
+        self.show_times = show_times
         
     def finish_tests(self):
         self.finish_current_suite()
@@ -264,13 +285,18 @@ class TestLocal(AssertVariations):
                 num_tests += 1
                 if i[0] == "PASS":
                     num_passes += 1
-            print(f"  {num_passes} / {num_tests} passed")
+            t = ""
+            if self.show_times:
+                elapsed = datetime.datetime.now() - self.suite_start_time
+                t = " in " + show_timedelta(elapsed)
+            print(f"  {num_passes} / {num_tests} passed{t}")
             self.results.append((self.current_suite, self.current_suite_results))
             self.current_suite = None
             self.current_suite_results = []
         
     def tpass(self, msg):
-        print(f"  PASS {msg}")
+        if not self.hide_successes:
+            print(f"  PASS {msg}")
         self.current_suite_results.append(("PASS", msg))
     def fail(self, msg):
         print(f"  FAIL {msg}")
@@ -279,6 +305,7 @@ class TestLocal(AssertVariations):
     def run_suite(self, f):
         self.finish_current_suite()
         self.current_suite = f.__name__
+        self.suite_start_time = datetime.datetime.now()
         print(f.__name__)
         try:
             f(self)
@@ -311,8 +338,9 @@ if __name__ == "__main__":
     # test.py -t pat1 -t pat2
     parser.add_argument('modules_to_test', nargs='*', default=[])
     parser.add_argument('--test-pattern', '-t', nargs='+', default=[])
-    parser.add_argument("--use-local", type=bool, default=False)
-
+    parser.add_argument("--use-local", action='store_true', default=False)
+    parser.add_argument("--hide-successes", action='store_true', default=False)
+    parser.add_argument("--show-times", action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -336,12 +364,14 @@ if __name__ == "__main__":
     ###########
     # execute tests
     if args.use_local:
-        t = TestLocal()
+        t = TestLocal(hide_successes=args.hide_successes,
+                      show_times=args.show_times)
     else:
         import socket_wrapper
         import multiprocessing
         import queue
-        t = TestServer()
+        t = TestServer(hide_successes=args.hide_successes,
+                       show_times=args.show_times)
 
     for moduleName in modules_to_test:
         try:
