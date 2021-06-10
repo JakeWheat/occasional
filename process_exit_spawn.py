@@ -51,6 +51,7 @@ import sys
 import signal
 import socket_wrapper
 import traceback
+import yeshup
 
 ##############################################################################
 
@@ -61,6 +62,7 @@ def spawn(f):
     (server_s, client_s) = socket_wrapper.value_socketpair()
 
     def spawned_process_wrapper(client_s, f):
+        yeshup.yeshup_me()
         try:
             ret = f()
             if ret != None:

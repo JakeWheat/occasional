@@ -59,6 +59,8 @@ demonstrate if a grandchild launch doesn't participate in the yeshup,
 recreate and test the original yeshup wrapper so it runs an arbitrary
 exe
 
+test yeshup works with the various multiprocessing spawn options
+
 """
 
 import time
@@ -70,7 +72,7 @@ import multiprocessing
 import threading
 import queue
 import signal
-import prctl
+import yeshup
 
 def run_it(cmd):
     p = subprocess.Popen(cmd)
@@ -183,7 +185,7 @@ def launch_basic():
         # to make this more general, can call this then call exec*
         # it's reset on fork, but not on exec*
 
-        prctl.set_pdeathsig(signal.SIGTERM)
+        yeshup.yeshup_me()
         print(f"child pid: {os.getpid()}", flush=True)
         #sys.stdout.flush()
         #for line in sys.stdin:

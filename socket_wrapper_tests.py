@@ -255,6 +255,7 @@ import tempfile
 import socket_wrapper
 import test_framework
 import get_proc_socket_info
+import yeshup
 
 dill.settings['recurse'] = True
 
@@ -278,6 +279,7 @@ def handle_net_exception(rec_queue, sock):
 
         
 def server_process_fn(server_receive_queue, server_send_queue):
+    yeshup.yeshup_me()
 
     # socket for an incoming active connection. this demo supports max one of
     # these at a time
@@ -415,6 +417,7 @@ def server_manager():
 ##############################################################################
     
 def client_process_fn(client_receive_queue, client_send_queue):
+    yeshup.yeshup_me()
 
     connection_sock = None
     receive_thread = None
@@ -1218,9 +1221,11 @@ def test_socket_passing(trp):
     get_addr_queue = multiprocessing.Queue()
     
     def server_server():
+        yeshup.yeshup_me()
         #print(f"server server, pid: {os.getpid()}")
 
         def server(subserver_c):
+            yeshup.yeshup_me()
             #print(f"server, pid: {os.getpid()}")
             # get the client socket from the socket connection to the
             # server server

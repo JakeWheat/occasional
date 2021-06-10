@@ -28,6 +28,7 @@ import functools
 import sys
 import traceback
 import datetime
+import yeshup
 
 def sysinfo_to_value(e):
     return ("".join(traceback.format_exception(*e, 0)),
@@ -41,6 +42,7 @@ def get_process_name(f):
         return f.__name__
 
 def test_server(address_sock, hide_successes, show_times):
+    yeshup.yeshup_me()
     # create the status/results queue
     # todo: do this without queues?
     res_queue = multiprocessing.Queue()

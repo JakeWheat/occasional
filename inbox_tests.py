@@ -3,6 +3,7 @@ import multiprocessing
 import functools
 import time
 import datetime
+import yeshup
 
 from inbox import *
 
@@ -17,6 +18,7 @@ SHORT_WAIT = 0.01
 def spawn(f):
     q = multiprocessing.Queue()
     def wrap_f(q,f):
+        yeshup.yeshup_me()
         with make_inbox() as ib:
             q.put(ib)
             f(ib)
