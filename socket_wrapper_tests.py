@@ -1188,69 +1188,6 @@ def test_connect_to_missing_server(trp):
                 trp.tpass("client connected status")
             case x:
                 trp.fail(f"client connected status expected ConnectionRefusedError or ConnectionResetError, got {x}")
-
-######################################
-
-"""
-
-demo showing accepting a connection, then passing the open socket to
-another process
-this is e.g. so you can have N processes ready to handle network connections,
-but only need to listen on one port
-
-"""
-
-def test_socket_passing(trp):
-
-    get_addr_queue = multiprocessing.Queue()
-    
-    def server_server():
-        yeshup.yeshup_me()
-        #print(f"server server, pid: {os.getpid()}")
-
-        def server(subserver_c):
-            yeshup.yeshup_me()
-            #print(f"server, pid: {os.getpid()}")
-            # get the client socket from the socket connection to the
-            # server server
-            client_sock = subserver_c.receive_sock()
-            # interact with the client
-            v = client_sock.receive_value()
-            if v == ("hello",):
-                client_sock.send_value(("hello", os.getpid()))
-            else:
-                client_sock.send_value(("error", v))
-
-        # communication between the server server and server
-        (subserver_s, subserver_c) = socket_wrapper.socketpair()
-        server_p = multiprocessing.Process(target=server, args=[subserver_c])
-        server_p.start()
-        
-        def accept_handler(client_sock, _):
-            # print("accept in server server")
-            # get a connection, pass it to the server
-            subserver_s.send_sock(client_sock)
-        srv = socket_wrapper.make_unix_socket_server(accept_handler, daemon=True)
-        get_addr_queue.put(srv.addr)
-            
-    server_server_p = multiprocessing.Process(target=server_server)
-    server_server_p.start()
-
-    def client():
-        #print(f"client, pid: {os.getpid()}")
-        addr = get_addr_queue.get()
-        c = socket_wrapper.connected_unix_socket(addr)
-        c.send_value(("hello",))
-        x = c.receive_value()
-        match x:
-           case ("hello", _):
-               trp.tpass("handshake via passed socket")
-           case _:
-               trp.fail("handshake via passed socket, expected ('hello',_), got {x}")
-        c.close()
-
-    client()
-
                 
 ##############################################################################
 
@@ -1278,5 +1215,4 @@ all_tests = [ \
               test_server_sends_half_message_kill_server,
               test_server_sends_half_message_kill_client,
               test_connect_to_missing_server,
-              test_socket_passing,
              ]
