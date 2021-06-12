@@ -20,8 +20,12 @@ import dill
 import sys
 import threading
 import ctypes
+import tempfile
 
 dill.settings['recurse'] = True
+
+AF_UNIX = socket.AF_UNIX
+AF_INET = socket.AF_INET
 
 ##############################################################################
 
@@ -78,10 +82,7 @@ def read_netstring(sock):
 
 ##############################################################################
 
-# todo: refactor so you can start with a connected socket, or a listening
-# socket, but not just 'a socket' that isn't doing anything
-
-class SafeSocket:
+class Socket:
     def __init__(self, sock=None, is_open=False,socket_type=None):
         if sock is None:
             if socket_type is None:
@@ -131,7 +132,7 @@ class SafeSocket:
 
     # send a socket connection over a socket using sendmsg, receivemsg
     def receive_sock(self):
-        msg, ancdata, flags, addr = self._socket.recvmsg(1, socket.CMSG_LEN(SafeSocket.c_int_size))
+        msg, ancdata, flags, addr = self._socket.recvmsg(1, socket.CMSG_LEN(Socket.c_int_size))
         if len(ancdata) != 1:
             raise Exception(f"expected to get ancdata of length 1 in recvmsg, got {ancdata}")
         (cmsg_level, cmsg_type, cmsg_data) = ancdata[0]
@@ -141,45 +142,21 @@ class SafeSocket:
             raise Exception(f"recvmsg, expected to get {socket.SCM_RIGHTS}, got {cmsg_type}")
         rs = socket.socket(fileno=int.from_bytes(cmsg_data, byteorder='little'))
         # todo: should it close the self socket if there's an exception?
-        return SafeSocket(rs, True)
+        return Socket(rs, True)
 
 
     def send_sock(self,sock_to_send):
-        self._socket.sendmsg([bytes("a", "ascii")],
+        self._socket.sendmsg([bytes("S", "ascii")],
                              [(socket.SOL_SOCKET,
                                socket.SCM_RIGHTS,
                                sock_to_send._socket.fileno() \
-                                 .to_bytes(SafeSocket.c_int_size, byteorder='little')
+                                 .to_bytes(Socket.c_int_size, byteorder='little')
                                )])
 
-"""
-
-value socket can wrap a safe socket and has a helper functions that
-allows reading and writing python values from/to the socket (using the
-dill lib for pickling)
-
-"""
-class ValueSocket:
-    def __init__(self,sock=None, socket_type=None):
-        if sock == None:
-            self.sock = SafeSocket(socket_type=socket_type)
-        else:
-            # todo: check it's a safe socket
-            self.sock = sock
-
-    # forward:
-    def send_raw(self, bs):
-        self.sock.send_raw(bs)
-    def is_open(self):
-        return self.sock.is_open()
-    def close(self):
-        self.sock.close()
-    def connect(self,addr):
-        self.sock.connect(addr)
-
+    # sending and receiving python values using dill
     def receive_value(self):
         try:
-            ns = read_netstring(self.sock._socket)
+            ns = read_netstring(self._socket)
             if ns == 0:
                 self.close()
                 return None
@@ -196,7 +173,7 @@ class ValueSocket:
     def send_value(self, val):
         try:
             pickled = dill.dumps(val)
-            write_netstring(self.sock._socket, pickled)
+            write_netstring(self._socket, pickled)
         except NetstringException:
             raise
         except (dill.PicklingError, dill.UnpicklingError):
@@ -205,7 +182,17 @@ class ValueSocket:
             self.close()
             raise
 
-    
+def connected_socket(addr, socket_type=None):
+    sock = Socket(socket_type=socket_type)
+    sock.connect(addr)
+    return sock
+
+def connected_unix_socket(addr):
+    sock = Socket(socket_type=AF_UNIX)
+    sock.connect(addr)
+    return sock
+
+
 ##############################################################################
     
 
@@ -217,8 +204,8 @@ the socket when a connection is made
 
 """
 class SocketServer:
-    def __init__(self, callback, socket_type=socket.AF_INET, addr=None, daemon=False):
-        self.listen_sock = SafeSocket(socket.socket(socket_type), True)
+    def __init__(self, callback, socket_type, addr, daemon):
+        self.listen_sock = Socket(socket.socket(socket_type), True)
         self.addr = addr
         self.accept_thread = None
         try:
@@ -243,7 +230,7 @@ class SocketServer:
             try:
                 while True:
                     (s,a) = self.listen_sock._socket.accept()
-                    s1 = SafeSocket(s, True)
+                    s1 = Socket(s, True)
                     tr = threading.Thread(target=callback,
                                           args=[s1, a],
                                           daemon=daemon)
@@ -266,11 +253,13 @@ class SocketServer:
         if self.accept_thread is not None:
             self.accept_thread.join()
 
+def make_socket_server(callback, addr=None, daemon=False):
+    return SocketServer(callback, socket_type=AF_INET, addr=addr, daemon=daemon)
 
+def make_unix_socket_server(callback, addr=None, daemon=False):
+    return SocketServer(callback, socket_type=AF_UNIX, addr=addr, daemon=daemon)
+
+            
 def socketpair():
     (a,b) = socket.socketpair()
-    return (SafeSocket(a, True), SafeSocket(b, True))
-
-def value_socketpair():
-    (a,b) = socket.socketpair()
-    return (ValueSocket(SafeSocket(a, True)), ValueSocket(SafeSocket(b, True)))
+    return (Socket(a, True), Socket(b, True))

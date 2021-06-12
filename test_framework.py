@@ -157,8 +157,7 @@ def test_server(address_sock, hide_successes, show_times):
                     print(f"error: unexpected message in handle suite: {x}")
 
     # accept a suite: ...
-    def accept_handler(cs, _):
-        client_sock = socket_wrapper.ValueSocket(cs)
+    def accept_handler(client_sock, _):
         match client_sock.receive_value():
             case ("summarize",):
                 summarize()
@@ -168,7 +167,7 @@ def test_server(address_sock, hide_successes, show_times):
                 print(f"unrecognised handshake to test server {x}")
         
     # start server
-    srv = socket_wrapper.SocketServer(accept_handler)
+    srv = socket_wrapper.make_socket_server(accept_handler)
     
     # send the address back on the pipe
     address_sock.send_value(srv.addr)
@@ -189,7 +188,7 @@ def run_suite(addr, f):
 class TestServer():
 
     def __init__(self, hide_successes, show_times):
-        (p0, p1) = socket_wrapper.value_socketpair()
+        (p0, p1) = socket_wrapper.socketpair()
         self.server_process = multiprocessing.Process(target=test_server, args=[p1,hide_successes, show_times])
         self.server_process.start()
         self.addr = p0.receive_value()
@@ -202,8 +201,7 @@ class TestServer():
         
 
     def finish_tests(self):
-        cs = socket_wrapper.ValueSocket()
-        cs.connect(self.addr)
+        cs = socket_wrapper.connected_socket(self.addr)
         cs.send_value(("summarize",))
         self.server_process.join()
 
@@ -236,8 +234,7 @@ class AssertVariations():
         
 class TestSuiteHandle(AssertVariations):
     def __init__(self, addr, f):
-        self.connection_sock = socket_wrapper.ValueSocket() #socket_type=socket_type)
-        self.connection_sock.connect(addr)
+        self.connection_sock = socket_wrapper.connected_socket(addr)
         self.connection_sock.send_value(("new_suite", get_process_name(f)))
         self.f = f
 

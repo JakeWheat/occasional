@@ -240,22 +240,17 @@ import traceback
 import multiprocessing
 import time
 import os
-import datetime
-import inspect
 import signal
 import contextlib
-import random
-import tempfile
 import socket_wrapper
-import test_framework
 import get_proc_socket_info
 import yeshup
 
 short_wait = 0.001
 
-# todo: don't fix this in a global
-socket_type = socket.AF_INET
-#socket_type = socket.AF_UNIX
+# todo: don't set this in a global
+socket_type = socket_wrapper.AF_INET
+#socket_type = socket_wrapper.AF_UNIX
 
 
 ##############################################################################
@@ -289,7 +284,7 @@ def server_process_fn(server_receive_queue, server_send_queue):
     def accept_fn(sock, _):
         nonlocal connection_sock, server_receive_queue
         try:
-            connection_sock = socket_wrapper.ValueSocket(sock)
+            connection_sock = sock
             server_receive_queue.put(("client-connected",))
             while True:
                 try:
@@ -331,7 +326,7 @@ def server_process_fn(server_receive_queue, server_send_queue):
                 if listen_open():
                     server_receive_queue.put(("error", "already-listening"))
                 else:
-                    listener = socket_wrapper.SocketServer(accept_fn, daemon=True)
+                    listener = socket_wrapper.make_socket_server(accept_fn, daemon=True)
                     server_receive_queue.put(("listen-addr", listener.addr))
             case ("unlisten",):
                 if not listen_open():
@@ -451,8 +446,7 @@ def client_process_fn(client_receive_queue, client_send_queue):
                     client_receive_queue.put(("error", "already-connected"))
                 else:
                     try:
-                        connection_sock = socket_wrapper.ValueSocket(socket_type=socket_type)
-                        connection_sock.connect(addr)
+                        connection_sock = socket_wrapper.connected_socket(addr, socket_type=socket_type)
                         # can this fail? in what situations?
                         receive_thread = threading.Thread(target=handle_receive)
                         receive_thread.daemon = True
@@ -636,18 +630,16 @@ def is_process_exited_race(pid):
 def test_trivial_sockets(trp):
 
     def my_server_callback(s,_):
-        s1 = socket_wrapper.ValueSocket(s)
-        v = s1.receive_value()
-        s1.send_value(("got", v))
-        v = s1.receive_value()
+        v = s.receive_value()
+        s.send_value(("got", v))
+        v = s.receive_value()
     
     # create a server
-    srv = socket_wrapper.SocketServer(my_server_callback, daemon=True)
+    srv = socket_wrapper.make_socket_server(my_server_callback, daemon=True)
 
     if True:
         # connect with a client
-        c = socket_wrapper.ValueSocket(socket_wrapper.SafeSocket())
-        c.connect(srv.addr)
+        c = socket_wrapper.connected_socket(srv.addr)
 
         # exchange messages using object socket
         c.send_value(("hello", True))
@@ -1221,7 +1213,7 @@ def test_socket_passing(trp):
             #print(f"server, pid: {os.getpid()}")
             # get the client socket from the socket connection to the
             # server server
-            client_sock = socket_wrapper.ValueSocket(subserver_c.receive_sock())
+            client_sock = subserver_c.receive_sock()
             # interact with the client
             v = client_sock.receive_value()
             if v == ("hello",):
@@ -1238,7 +1230,7 @@ def test_socket_passing(trp):
             # print("accept in server server")
             # get a connection, pass it to the server
             subserver_s.send_sock(client_sock)
-        srv = socket_wrapper.SocketServer(accept_handler, daemon=True)
+        srv = socket_wrapper.make_unix_socket_server(accept_handler, daemon=True)
         get_addr_queue.put(srv.addr)
             
     server_server_p = multiprocessing.Process(target=server_server)
@@ -1247,8 +1239,7 @@ def test_socket_passing(trp):
     def client():
         #print(f"client, pid: {os.getpid()}")
         addr = get_addr_queue.get()
-        c = socket_wrapper.ValueSocket(socket_wrapper.SafeSocket())
-        c.connect(addr)
+        c = socket_wrapper.connected_unix_socket(addr)
         c.send_value(("hello",))
         x = c.receive_value()
         match x:

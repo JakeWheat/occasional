@@ -61,23 +61,21 @@ class Inbox:
 def make_inbox():
     q = queue.Queue()
 
-    def accept_handler(client_sock, _):
-        sock = socket_wrapper.ValueSocket(client_sock)
+    def accept_handler(sock, _):
         while True:
             x = sock.receive_value()
             if x is None:
                 break
             q.put(x)
 
-    srv = socket_wrapper.SocketServer(accept_handler, daemon=True)
+    srv = socket_wrapper.make_socket_server(accept_handler, daemon=True)
     try:
         yield Inbox(srv.addr, q)
     finally:
         srv.close()
 
 def send(ib, msg):
-    sock = socket_wrapper.ValueSocket()
-    sock.connect(ib.addr)
+    sock = socket_wrapper.connected_socket(ib.addr)
     sock.send_value(msg)
     sock.close()
 
