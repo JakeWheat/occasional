@@ -35,7 +35,7 @@ import time
 
 # simple exits from a python function
 
-def test_function(trp, msg, f, ex):
+def helper_test_function(trp, msg, f, ex):
 
     x = spawn(f)
     res = wait_spawn(x)
@@ -45,29 +45,29 @@ def test_function(trp, msg, f, ex):
 def test_leave_function(trp):
     def my_f():
         pass
-    test_function(trp, "leave function exit code", my_f, ("exitcode", 0))
+    helper_test_function(trp, "leave function exit code", my_f, ("exitcode", 0))
 
 def test_python_exit_0(trp):
     def my_f():
         sys.exit()
-    test_function(trp, "sys.exit()", my_f, ("exitcode", 0))
+    helper_test_function(trp, "sys.exit()", my_f, ("exitcode", 0))
     
 
 def test_linux_exit_0(trp):
     def my_f():
         os._exit(0)
-    test_function(trp, "os._exit(0)", my_f, ("exitcode", 0))
+    helper_test_function(trp, "os._exit(0)", my_f, ("exitcode", 0))
 
 
 def test_python_exit_non_zero(trp):
     def my_f():
         sys.exit(1)
-    test_function(trp, "sys.exit(1)", my_f, ("exitcode", 1))
+    helper_test_function(trp, "sys.exit(1)", my_f, ("exitcode", 1))
 
 def test_linux_exit_non_zero(trp):
     def my_f():
         os._exit(1)
-    test_function(trp, "os._exit(1)", my_f, ("exitcode", 1))
+    helper_test_function(trp, "os._exit(1)", my_f, ("exitcode", 1))
 
 def test_sigterm(trp):
     def my_f():
@@ -105,19 +105,19 @@ def test_exe_sigkill(trp):
 def test_return_from_function(trp):
     def my_f():
         return "bye"
-    test_function(trp, "return value", my_f, "bye")
+    helper_test_function(trp, "return value", my_f, "bye")
 
 def test_exit_value_function_0(trp):
     def my_f():
         spawn_exit(0)
     # exiting with an integer value is distinguishable
     # from the process exiting with os exit code 0
-    test_function(trp, "exit value function", my_f, 0)
+    helper_test_function(trp, "exit value function", my_f, 0)
 
 def test_exit_value_function_non_trivial(trp):
     def my_f():
         spawn_exit("bye also")
-    test_function(trp, "exit value function", my_f, "bye also")
+    helper_test_function(trp, "exit value function", my_f, "bye also")
 
 class Tedious(Exception):
     def __init__(self,msg):
@@ -151,20 +151,20 @@ def test_error_function(trp):
             trp.fail(f"expected ('error', 'wheee', stacktrace), got {res}")
 
 
-all_tests = [test_leave_function,
-             test_python_exit_0,
-             test_linux_exit_0,
-             test_python_exit_non_zero,
-             test_linux_exit_non_zero,
-             test_sigterm,
-             test_sigkill_0,
-             test_exe_return_0,
-             test_exe_return_non_zero,
-             test_exe_sigterm,
-             test_exe_sigkill,
-             test_return_from_function,
-             test_exit_value_function_0,
-             test_exit_value_function_non_trivial,
-             test_uncaught_exception,
-             test_error_function,
-             ]
+# all_tests = [test_leave_function,
+#              test_python_exit_0,
+#              test_linux_exit_0,
+#              test_python_exit_non_zero,
+#              test_linux_exit_non_zero,
+#              test_sigterm,
+#              test_sigkill_0,
+#              test_exe_return_0,
+#              test_exe_return_non_zero,
+#              test_exe_sigterm,
+#              test_exe_sigkill,
+#              test_return_from_function,
+#              test_exit_value_function_0,
+#              test_exit_value_function_non_trivial,
+#              test_uncaught_exception,
+#              test_error_function,
+#              ]

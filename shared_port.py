@@ -359,12 +359,12 @@ def test_shared_port_server_heavy(trp):
 
 ##############################################################################
 
-all_tests = [ \
-              test_socket_passing,
+# all_tests = [ \
+#               test_socket_passing,
 
-              test_connect_list,
-              test_connect_start_list,
+#               test_connect_list,
+#               test_connect_start_list,
 
-              test_shared_port_server,
-              test_shared_port_server_heavy
-             ]
+#               test_shared_port_server,
+#               test_shared_port_server_heavy
+#              ]

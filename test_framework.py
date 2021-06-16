@@ -77,7 +77,7 @@ def get_process_name(f):
     else:
         return f.__name__
 
-def test_server(address_sock, hide_successes, show_times):
+def demo_test_server(address_sock, hide_successes, show_times):
     yeshup.yeshup_me()
     # create the status/results queue
     # todo: do this without queues?
@@ -189,7 +189,7 @@ class TestServer():
 
     def __init__(self, hide_successes, show_times):
         (p0, p1) = socket_wrapper.socketpair()
-        self.server_process = multiprocessing.Process(target=test_server, args=[p1,hide_successes, show_times])
+        self.server_process = multiprocessing.Process(target=demo_test_server, args=[p1,hide_successes, show_times])
         self.server_process.start()
         self.addr = p0.receive_value()
         p0.close()
@@ -349,7 +349,13 @@ class TestLocal(AssertVariations):
             self.fail(f"test suite threw exception {x}")
 
 
-
+def get_module_tests(mod):
+    try:
+        x = getattr(mod, "all_tests")
+    except AttributeError:
+        pass
+    return [getattr(mod,x) for x in dir(mod)
+            if x.startswith('test_')]
             
 if __name__ == "__main__":
 
@@ -419,9 +425,9 @@ if __name__ == "__main__":
                         run_module = True
                         break
             mod = importlib.import_module(moduleName)
-            ts = getattr(mod, "all_tests")
+            ts = get_module_tests(mod)
             first_match = True
-            if run_module:
+            if run_module and ts != []:
                 print(moduleName)
                 print("------")
             try:

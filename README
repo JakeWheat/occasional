@@ -56,6 +56,12 @@ the process produced a result, or error info if it failed.
   machine, whatever the reason
 * you can as reliably as possible detect the same for remote processes
 * there's a ports system like Erlang to run non native processes
+* it reproduces the key behaviour in Erlang that in addition to the
+  single multiplexed inbox, you only have one thread reading from this
+  queue
+* the slightly subtler behaviour which makes a lot of things easier
+  is that if one process sends several messages to another, the receiving
+  process will receive them in order unless there's a fault
 * it's designed to build crash only systems, sigkill is routinely used
   on user processes
 

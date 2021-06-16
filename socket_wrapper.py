@@ -156,6 +156,7 @@ class Socket:
         # resources in the local process, while leaving the socket
         # connected fine in the recipient process
         # sock_to_send.close()
+        # maybe it's as simple as closing the socket without doing a shutdown
 
     # sending and receiving python values using dill
     def receive_value(self):
