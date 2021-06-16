@@ -152,6 +152,10 @@ class Socket:
                                sock_to_send._socket.fileno() \
                                  .to_bytes(Socket.c_int_size, byteorder='little')
                                )])
+        # todo: what are you supposed to do here to release the socket
+        # resources in the local process, while leaving the socket
+        # connected fine in the recipient process
+        # sock_to_send.close()
 
     # sending and receiving python values using dill
     def receive_value(self):
