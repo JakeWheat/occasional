@@ -62,6 +62,8 @@ the process produced a result, or error info if it failed.
 * the slightly subtler behaviour which makes a lot of things easier
   is that if one process sends several messages to another, the receiving
   process will receive them in order unless there's a fault
+* a process is a unit of resource management recovery -> resources
+  don't leak when a process exits or crashes
 * it's designed to build crash only systems, sigkill is routinely used
   on user processes
 
