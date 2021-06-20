@@ -64,14 +64,14 @@ class ExitErrorException(Exception):
     def __init__(self,val):
         self.val = val
 
-def spawn(f):
+def spawn(f, daemon=False):
 
     (server_s, client_s) = socket_wrapper.socketpair()
 
     def spawned_process_wrapper(client_s, f):
         yeshup.yeshup_me()
         try:
-            ret = f()
+            ret = f(client_s)
             if ret != None:
                 client_s.send_value(ret)
         except SystemExit:
@@ -86,7 +86,7 @@ def spawn(f):
             client_s.send_value(("error", einf[1], traceback.extract_tb(einf[2])))
             
     
-    p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, f])
+    p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, f], daemon=daemon)
     p.start()
     return (p, server_s)
 

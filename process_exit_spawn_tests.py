@@ -32,12 +32,19 @@ from process_exit_spawn import *
 import os
 import sys
 import time
+import functools
 
 # simple exits from a python function
 
+def spawn_ignore(f):
+    def ignore_f(f, _):
+        return f()
+    return spawn(functools.partial(ignore_f, f))
+        
+
 def helper_test_function(trp, msg, f, ex):
 
-    x = spawn(f)
+    x = spawn_ignore(f)
     res = wait_spawn(x)
     trp.assert_equal(msg, ex, res)
 
@@ -73,7 +80,7 @@ def test_sigterm(trp):
     def my_f():
         time.sleep(1000)
         
-    x = spawn(my_f)
+    x = spawn_ignore(my_f)
     os.kill(get_spawn_pid(x), signal.SIGTERM)
     res = wait_spawn(x)
     trp.assert_equal("sigterm", ('signal', 'Terminated'), res)
@@ -83,7 +90,7 @@ def test_sigkill_0(trp):
     def my_f():
         time.sleep(1000)
         
-    x = spawn(my_f)
+    x = spawn_ignore(my_f)
     os.kill(get_spawn_pid(x), signal.SIGKILL)
     res = wait_spawn(x)
     trp.assert_equal("sigterm", ('signal', 'Killed'), res)
@@ -127,7 +134,7 @@ class Tedious(Exception):
 def test_uncaught_exception(trp):
     def my_f():
         raise Tedious("hi")
-    x = spawn(my_f)
+    x = spawn_ignore(my_f)
     res = wait_spawn(x)
     match res:
         case ("error", e, st):
@@ -141,7 +148,7 @@ def test_uncaught_exception(trp):
 def test_error_function(trp):
     def my_f():
         spawn_error("wheee")
-    x = spawn(my_f)
+    x = spawn_ignore(my_f)
     res = wait_spawn(x)
     match res:
         case ("error", e, st):
