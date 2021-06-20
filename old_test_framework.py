@@ -421,7 +421,7 @@ if __name__ == "__main__":
                 run_module = True
             else:
                 for r in test_patterns_re:
-                    if r.match(moduleName):
+                    if r.search(moduleName):
                         run_module = True
                         break
             mod = importlib.import_module(moduleName)
@@ -436,7 +436,7 @@ if __name__ == "__main__":
                         t.run_suite(f)
                     else:
                         for r in test_patterns_re:
-                            if r.match(f.__name__):
+                            if r.search(f.__name__):
                                 if first_match:
                                     first_match = False
                                     print(moduleName)
