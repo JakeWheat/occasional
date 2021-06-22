@@ -72,6 +72,8 @@ check a test case with an uncaught exception
 check generating a static file and then running it
 check the output
 check any other command line options
+test when there are no discoverable test modules
+test when the pattern doesn't match any tests
 
 
 """
@@ -87,12 +89,13 @@ import re
 import queue
 import multiprocessing
 import threading
-import yeshup
 import functools
-import spawn
 import datetime
 import sqlite3
 import os
+
+import spawn
+import yeshup
 
 
 ##############################################################################
@@ -181,7 +184,12 @@ def get_modules_tests_from_glob(glob_list):
 
 # keep only tests matching the regexes
 # any empty groups are removed completely
-def filter_test_tree(tree, regs):
+
+def filter_test_tree(tree,regs):
+    x = filter_test_treex(tree,regs)
+    return (TestGroup(), "all_tests", []) if x is None else x
+
+def filter_test_treex(tree, regs):
     if regs == []:
         return tree
     match tree:
@@ -194,7 +202,7 @@ def filter_test_tree(tree, regs):
             for r in regs:
                 if r.search(nm):
                     return tree
-            ts1 = [filter_test_tree(t, regs) for t in ts]
+            ts1 = [filter_test_treex(t, regs) for t in ts]
             ts2 = [t for t in ts1 if t is not None]
             if ts2 == []:
                 return None
@@ -344,6 +352,8 @@ def make_testcase_iterator(tree):
                 yield (TestCase(), tid, parent_id, nm, fn)
             case _:
                 print(f"no match for {tree}")
+                traceback.print_stack()  
+               
 
     return f(tree, None)
         

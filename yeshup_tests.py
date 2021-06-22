@@ -197,8 +197,6 @@ def launch_basic():
     p.join()
     #print("exiting launch basic")
 
-# all_tests = [test_simple_yeshup]
-    
 if __name__ == "__main__":
     # check the args, see if this is the launcher or the testing exe
     # you can run the test standalone if you use

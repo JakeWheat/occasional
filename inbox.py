@@ -28,6 +28,26 @@ the next time you call receive
 from someone else in a message, then the receiver of the message can
 send messages to that address
 
+
+Some tweakables:
+
+option to put a message on the queue when there's a disconnection
+callback for an alternative connection supplied externally
+callback to handle the sock reading thread to do special
+  behaviour, used to implement the socket passing stuff
+  this is connection specific
+potentially a callback to act on messages in a different thread
+  before they are posted to the queue (a global handler, not
+  connection specific)
+  this is probably needed for some erlang-like features
+when it moves to not using threads, then there will be a choice
+  whether to run these things in background threads or not
+  default will be not, but it will be strongly suggested
+    to run them in background threads if you're not sure they
+    are really fast, plus best practices on how to do this
+
+
+
 """
 
 import sck
@@ -62,16 +82,32 @@ class Inbox:
         # the connection handshake tells it the address of the
         # connecting process
         self.connection_cache = {}
-        srv = sck.make_socket_server(
-            functools.partial(Inbox.accept_handler,self),
+        self.srv = None
+        self.addr = None
+
+    # make an inbox with a socket server listening for connections
+    @classmethod
+    def make_with_server(_):
+        s = Inbox()
+        s.srv = sck.make_socket_server(
+            functools.partial(Inbox.accept_handler,s),
             daemon=True)
-        self.addr = srv.addr
-        self.srv = srv
+        s.addr = s.srv.addr
+        return s
+
+    @classmethod
+    def make_client(_, addr):
+        s = Inbox()
+        s.addr = addr
+        return s
 
     def close(self):
-        self.srv.close()
+        if self.srv is not None:
+            self.srv.close()
         for i in self.connection_cache.values():
             i.close()
+        # todo: wipe the queue, close all the cached connections
+        # join all the background threads
         
     # hack to allow sending an 'inbox' as a message
     # instead of e.g having to remember to send ib.addr
@@ -86,6 +122,24 @@ class Inbox:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
+    # set up the background thread which reads from the socket
+    # and adds to the inbox queue
+    # todo: save the threads and join them when the inbox is closed
+    # join them when the socket is closed
+    def setup_read_handler(self, sock):
+        t = threading.Thread(target=Inbox.connection_handler,
+                             args=[self,sock],
+                             daemon=True)
+        t.start()
+        
+
+    # attach an already connected socket
+    # this means this socket can be used to send messages to
+    # it's address, and it will be read from using the usual thread
+    def attach_socket(self, raddr, sock):
+        self.connection_cache[raddr] = sock
+        self.setup_read_handler(sock)
+        
     # the accept handler is used for new incoming connections
     def accept_handler(self, sock, _):
         # save the connection to the cache
@@ -123,21 +177,21 @@ the only thing left there is yield the created inbox
 and call close in the finally
 """
 
+    def default_connect_and_handshake(my_addr, connect_addr):
+        print(f"try to connect to {connect_addr}")
+        sock = sck.connected_socket(connect_addr)
+        sock.send_value(("hello my name is", my_addr))
+        return sock
+    
     def send(self, ib, msg):
         if ib.addr == self.addr:
             # self send, skip pickling and sending over a socket
             ib.q.put(msg)
         else:
             if ib.addr not in self.connection_cache:
-                sock = sck.connected_socket(ib.addr)
+                sock = Inbox.default_connect_and_handshake(self.addr, ib.addr)
                 self.connection_cache[ib.addr] = sock
-                sock.send_value(("hello my name is", self.addr))
-                # set up the thread to receive messages
-                # on this connection
-                t = threading.Thread(target=Inbox.connection_handler,
-                                     args=[self,sock],
-                                     daemon=True)
-                t.start()
+                self.setup_read_handler(sock)
             else:
                 sock = self.connection_cache[ib.addr]
             sock.send_value(msg)
@@ -304,7 +358,7 @@ code
         
 @contextlib.contextmanager
 def make_inbox():
-    x = Inbox()
+    x = Inbox.make_with_server()
     try:
         yield x
     finally:

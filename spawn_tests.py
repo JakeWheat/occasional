@@ -156,22 +156,3 @@ def test_error_function(trp):
             trp.assert_equal("stacktrace class", traceback.StackSummary, type(st))
         case _:
             trp.fail(f"expected ('error', 'wheee', stacktrace), got {res}")
-
-
-# all_tests = [test_leave_function,
-#              test_python_exit_0,
-#              test_linux_exit_0,
-#              test_python_exit_non_zero,
-#              test_linux_exit_non_zero,
-#              test_sigterm,
-#              test_sigkill_0,
-#              test_exe_return_0,
-#              test_exe_return_non_zero,
-#              test_exe_sigterm,
-#              test_exe_sigkill,
-#              test_return_from_function,
-#              test_exit_value_function_0,
-#              test_exit_value_function_non_trivial,
-#              test_uncaught_exception,
-#              test_error_function,
-#              ]

@@ -355,16 +355,3 @@ how to reliably test when subservers might exit at any time
 """
 def test_shared_port_server_heavy(trp):
     pass
-
-
-##############################################################################
-
-# all_tests = [ \
-#               test_socket_passing,
-
-#               test_connect_list,
-#               test_connect_start_list,
-
-#               test_shared_port_server,
-#               test_shared_port_server_heavy
-#              ]

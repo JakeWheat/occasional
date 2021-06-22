@@ -467,26 +467,3 @@ instead of continually stretching
         ib.receive()
         ib.receive()
         ib.receive()
-
-
-
-##############################################################################
-
-# all_tests = [ \
-#               test_self_send,
-#               test_send_other_process,
-#               test_many_clients,
-#               test_many_clients_pipelined,
-#               test_timeout0_empty,
-#               test_timeout0_nonempty,
-#               test_timeout_timesout,
-#               test_timeout_explicit_infinity,
-#               test_read_all_inbox,
-#               test_flush_buffer,
-#               test_selective_receive1,
-#               test_selective_receive2,
-#               test_selective_receive3,
-#               test_timeout_with_unmatching_message,
-#               test_timeout_with_unmatching_message2,
-#               test_timeout_with_delayed_unmatching_messages,
-#              ]
