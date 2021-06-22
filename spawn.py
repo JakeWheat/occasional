@@ -52,7 +52,7 @@ a single exit value for a process.
 import multiprocessing
 import sys
 import signal
-import socket_wrapper
+import sck
 import traceback
 import yeshup
 
@@ -66,7 +66,7 @@ class ExitErrorException(Exception):
 
 def spawn(f, daemon=False):
 
-    (server_s, client_s) = socket_wrapper.socketpair()
+    (server_s, client_s) = sck.socketpair()
 
     def spawned_process_wrapper(client_s, f):
         yeshup.yeshup_me()

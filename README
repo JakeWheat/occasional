@@ -104,8 +104,8 @@ messages are left in the queue
 
 you can send addresses in messages
 
-process_exit_spawn.py
----------------------
+spawn.py
+--------
 
 Running a process, then catching when it exits and getting successful
 exit values and error information on failure
@@ -117,8 +117,8 @@ Running a server server, which can launch new server processes,
 clients can connect to these, using only a single listening port and
 passing open socket ends between processes
 
-socket_wrapper.py
------------------
+sck.py
+------
 
 Wrapper code around the low level sockets api adding safety and some
 higher level features

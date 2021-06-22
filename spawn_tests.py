@@ -27,7 +27,7 @@ for the exe, use a spawn_exe function which takes a command line to run
     linux integer exit codes or signals)
 """
 
-from process_exit_spawn import *
+from spawn import *
 
 import os
 import sys

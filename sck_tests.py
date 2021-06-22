@@ -135,7 +135,7 @@ do some stability/resource leak tests:
 come up with some denial of service/flood/swamp style activities, and
 write some tests to see what happens when you do them
 
-anomaly testing: check using the socket_wrapper api wrong
+anomaly testing: check using the sck api wrong
 
 review - see if doing all of these that should be done:
 check for basic errors in interacting with the processes
@@ -242,15 +242,15 @@ import time
 import os
 import signal
 import contextlib
-import socket_wrapper
+import sck
 import get_proc_socket_info
 import yeshup
 
 short_wait = 0.001
 
 # todo: don't set this in a global
-socket_type = socket_wrapper.AF_INET
-#socket_type = socket_wrapper.AF_UNIX
+socket_type = sck.AF_INET
+#socket_type = sck.AF_UNIX
 
 
 ##############################################################################
@@ -326,7 +326,7 @@ def server_process_fn(server_receive_queue, server_send_queue):
                 if listen_open():
                     server_receive_queue.put(("error", "already-listening"))
                 else:
-                    listener = socket_wrapper.make_socket_server(accept_fn, daemon=True)
+                    listener = sck.make_socket_server(accept_fn, daemon=True)
                     server_receive_queue.put(("listen-addr", listener.addr))
             case ("unlisten",):
                 if not listen_open():
@@ -446,7 +446,7 @@ def client_process_fn(client_receive_queue, client_send_queue):
                     client_receive_queue.put(("error", "already-connected"))
                 else:
                     try:
-                        connection_sock = socket_wrapper.connected_socket(addr, socket_type=socket_type)
+                        connection_sock = sck.connected_socket(addr, socket_type=socket_type)
                         # can this fail? in what situations?
                         receive_thread = threading.Thread(target=handle_receive)
                         receive_thread.daemon = True
@@ -635,11 +635,11 @@ def test_trivial_sockets(trp):
         v = s.receive_value()
     
     # create a server
-    srv = socket_wrapper.make_socket_server(my_server_callback, daemon=True)
+    srv = sck.make_socket_server(my_server_callback, daemon=True)
 
     if True:
         # connect with a client
-        c = socket_wrapper.connected_socket(srv.addr)
+        c = sck.connected_socket(srv.addr)
 
         # exchange messages using object socket
         c.send_value(("hello", True))

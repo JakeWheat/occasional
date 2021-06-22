@@ -20,7 +20,7 @@ properly
 
 import yeshup
 import multiprocessing
-import socket_wrapper
+import sck
 import os
 import time
 import functools
@@ -54,7 +54,7 @@ def test_socket_passing(trp):
                 client_sock.send_value(("error", v))
 
         # communication between the server server and server
-        (subserver_s, subserver_c) = socket_wrapper.socketpair()
+        (subserver_s, subserver_c) = sck.socketpair()
         server_p = multiprocessing.Process(target=server, args=[subserver_c])
         server_p.start()
         
@@ -62,7 +62,7 @@ def test_socket_passing(trp):
             # print("accept in server server")
             # get a connection, pass it to the server
             subserver_s.send_sock(client_sock)
-        srv = socket_wrapper.make_unix_socket_server(accept_handler, daemon=True)
+        srv = sck.make_unix_socket_server(accept_handler, daemon=True)
         get_addr_queue.put(srv.addr)
             
     server_server_p = multiprocessing.Process(target=server_server)
@@ -71,7 +71,7 @@ def test_socket_passing(trp):
     def client():
         #print(f"client, pid: {os.getpid()}")
         addr = get_addr_queue.get()
-        c = socket_wrapper.connected_unix_socket(addr)
+        c = sck.connected_unix_socket(addr)
         c.send_value(("hello",))
         x = c.receive_value()
         match x:
@@ -167,7 +167,7 @@ def start_server():
                    case ("start-subserver", nm, f):
                        # how does f have shared state if it's an accept handler
                        # and each one runs in a new thread in a different process?
-                       (conna, connb) = socket_wrapper.socketpair()
+                       (conna, connb) = sck.socketpair()
                        p = spawn(functools.partial(runsubserver, connb, f))
                        subservers[nm] = (p,conna)
                        sock.send_value("subserver-started")
@@ -189,7 +189,7 @@ def start_server():
             print("exception in main server accept handler")
             print(sys.exc_info())
 
-    srv = socket_wrapper.make_socket_server(accept_handler, daemon=True)
+    srv = sck.make_socket_server(accept_handler, daemon=True)
     return srv.addr
 
 ##############################################################################
@@ -202,7 +202,7 @@ def start_server():
 def test_connect_list(trp):
     addr = start_server()
 
-    sock = socket_wrapper.connected_socket(addr)
+    sock = sck.connected_socket(addr)
 
     sock.send_value("list-subservers")
     x = sock.receive_value()
@@ -215,7 +215,7 @@ def test_connect_list(trp):
 def test_connect_start_list(trp):
     addr = start_server()
     
-    sock = socket_wrapper.connected_socket(addr)
+    sock = sck.connected_socket(addr)
 
     def my_server(sock):
         try:
@@ -245,7 +245,7 @@ def test_connect_start_list(trp):
     x = sock.receive_value()
     trp.assert_equal("message from subserver", ("hello", "stuff"), x)
 
-    srv_sock = socket_wrapper.connected_socket(addr)
+    srv_sock = sck.connected_socket(addr)
     srv_sock.send_value("exit")
 
 
@@ -278,7 +278,7 @@ then exchange message with first server
 def test_shared_port_server(trp):
 
     addr = start_server()
-    sock = socket_wrapper.connected_socket(addr)
+    sock = sck.connected_socket(addr)
 
     def my_server1(sock):
         try:
@@ -316,19 +316,19 @@ def test_shared_port_server(trp):
     x = sock.receive_value()
     trp.assert_equal("list subservers", ["srv1", "srv2"], x)
 
-    sock1 = socket_wrapper.connected_socket(addr)
+    sock1 = sck.connected_socket(addr)
     sock1.send_value(("connect", "srv1"))
     sock1.send_value("stuff")
     x = sock1.receive_value()
     trp.assert_equal("message from subserver", ("hello", "stuff"), x)
 
-    sock2 = socket_wrapper.connected_socket(addr)
+    sock2 = sck.connected_socket(addr)
     sock2.send_value(("connect", "srv2"))
     sock2.send_value("stuff1")
     x = sock2.receive_value()
     trp.assert_equal("message from subserver", ("greetings", "stuff1"), x)
 
-    sock3 = socket_wrapper.connected_socket(addr)
+    sock3 = sck.connected_socket(addr)
     sock3.send_value(("connect", "srv1"))
     sock3.send_value("stuff2")
     x = sock3.receive_value()

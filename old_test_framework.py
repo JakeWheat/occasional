@@ -167,7 +167,7 @@ def demo_test_server(address_sock, hide_successes, show_times):
                 print(f"unrecognised handshake to test server {x}")
         
     # start server
-    srv = socket_wrapper.make_socket_server(accept_handler)
+    srv = sck.make_socket_server(accept_handler)
     
     # send the address back on the pipe
     address_sock.send_value(srv.addr)
@@ -188,7 +188,7 @@ def run_suite(addr, f):
 class TestServer():
 
     def __init__(self, hide_successes, show_times):
-        (p0, p1) = socket_wrapper.socketpair()
+        (p0, p1) = sck.socketpair()
         self.server_process = multiprocessing.Process(target=demo_test_server, args=[p1,hide_successes, show_times])
         self.server_process.start()
         self.addr = p0.receive_value()
@@ -201,7 +201,7 @@ class TestServer():
         
 
     def finish_tests(self):
-        cs = socket_wrapper.connected_socket(self.addr)
+        cs = sck.connected_socket(self.addr)
         cs.send_value(("summarize",))
         self.server_process.join()
 
@@ -234,7 +234,7 @@ class AssertVariations():
         
 class TestSuiteHandle(AssertVariations):
     def __init__(self, addr, f):
-        self.connection_sock = socket_wrapper.connected_socket(addr)
+        self.connection_sock = sck.connected_socket(addr)
         self.connection_sock.send_value(("new_suite", get_process_name(f)))
         self.f = f
 
@@ -385,8 +385,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    #modules_to_test = ["socket_wrapper_tests",
-    #                   "sockets_passing_demo"]
     modules_to_test = args.modules_to_test
     # affects error messages
     auto_mode = False
@@ -408,7 +406,7 @@ if __name__ == "__main__":
         t = TestLocal(hide_successes=args.hide_successes,
                       show_times=args.show_times)
     else:
-        import socket_wrapper
+        import sck
         import multiprocessing
         import queue
         t = TestServer(hide_successes=args.hide_successes,

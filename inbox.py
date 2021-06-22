@@ -30,7 +30,7 @@ send messages to that address
 
 """
 
-import socket_wrapper
+import sck
 import contextlib
 import queue
 import datetime
@@ -62,7 +62,7 @@ class Inbox:
         # the connection handshake tells it the address of the
         # connecting process
         self.connection_cache = {}
-        srv = socket_wrapper.make_socket_server(
+        srv = sck.make_socket_server(
             functools.partial(Inbox.accept_handler,self),
             daemon=True)
         self.addr = srv.addr
@@ -129,7 +129,7 @@ and call close in the finally
             ib.q.put(msg)
         else:
             if ib.addr not in self.connection_cache:
-                sock = socket_wrapper.connected_socket(ib.addr)
+                sock = sck.connected_socket(ib.addr)
                 self.connection_cache[ib.addr] = sock
                 sock.send_value(("hello my name is", self.addr))
                 # set up the thread to receive messages

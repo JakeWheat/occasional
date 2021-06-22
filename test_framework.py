@@ -89,7 +89,7 @@ import multiprocessing
 import threading
 import yeshup
 import functools
-import process_exit_spawn
+import spawn
 import datetime
 import sqlite3
 import os
@@ -546,7 +546,7 @@ select * from quick_summary
                         trace(("end_group", gid))
                     case (TestCase(), tid, parent_id, nm, fn):
                         trace(("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
-                        p = process_exit_spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
+                        p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
                         wrap_sock_in(p[1], in_queue)
 
                         num_running += 1
