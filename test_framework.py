@@ -94,6 +94,7 @@ import datetime
 import sqlite3
 import os
 import tempfile
+import signal
 
 import spawn
 import yeshup
@@ -495,17 +496,36 @@ def make_testcase_iterator(tree):
 
 # test runner that supports running each test in a separate process
 
-def testcase_worker_wrapper(tid, nm, f, status_socket):
-    #print("start test")
+class TimeoutException(Exception):
+   pass
+
+def alarm_handler(signum, frame):
+    raise TimeoutException()
+    
+def testcase_worker_wrapper(tid, nm, f, status_socket, timeout=1):
+    x = None
     h = RemoteTestHandle(tid, status_socket)
     try:
-        f(h)
-    except:
-        x = sysinfo_to_value(sys.exc_info())
-        # change this to send the message on the socket
-        h.fail(f"test suite {nm} failed with uncaught exception {x}")
+        try:
+            signal.signal(signal.SIGALRM, alarm_handler)
+            signal.alarm(timeout)
+            f(h)
+            signal.alarm(0)
+        except TimeoutException:
+            h.fail(f"test suite {nm} timed out after {timeout}s")
+        except:
+            x = sysinfo_to_value(sys.exc_info())
+            h.fail(f"test suite {nm} failed with uncaught exception {x}")
+    except TimeoutException:
+        # double up here in case another exception is thrown
+        # and we catch it in time, but then the alarm goes off
+        # we want to make sure the exception doesn't leak, so we
+        # don't have any races where the suite exception doesn't
+        # get reported
+        if x is None:
+            h.fail(f"test suite {nm} timed out after {timeout}s")
     finally:
-        status_socket.send_value(("end_testcase", tid, datetime.datetime.now()))
+            status_socket.send_value(("end_testcase", tid, datetime.datetime.now()))
 
 # reads values from the sock and posts them to the queue, in a
 # background thread

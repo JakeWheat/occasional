@@ -178,7 +178,7 @@ and call close in the finally
 """
 
     def default_connect_and_handshake(my_addr, connect_addr):
-        print(f"try to connect to {connect_addr}")
+        #print(f"try to connect to {connect_addr}")
         sock = sck.connected_socket(connect_addr)
         sock.send_value(("hello my name is", my_addr))
         return sock
