@@ -333,17 +333,8 @@ code
                 self.q_buffer = mid_receive_buffer + self.q_buffer
                 return mx
 
-            
-# todo: add a version which can be used without with
-# it will have a make_inbox, and a close function
-        
-@contextlib.contextmanager
-def make_inbox():
-    x = Inbox.make_with_server()
-    try:
-        yield x
-    finally:
-        x.close()
+    def __enter__(self):
+        return self
 
-
-
+    def __exit__(self,exception_type, exception_value, traceback):
+        self.close()
