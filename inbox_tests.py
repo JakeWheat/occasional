@@ -4,6 +4,8 @@ import functools
 import time
 import datetime
 import yeshup
+import os
+import traceback
 
 from inbox import *
 
@@ -487,3 +489,73 @@ def test_disconnect_notification(trp):
         x = ib.receive(timeout=0.1)
         trp.assert_equal("check disconnect message", ("client-disconnected", addr), x)
         
+
+# alternative way of spawning and connecting
+# you spawn via a central process, this creates processes with
+# one end of a socket pair, holding on to the other one
+# you connect to other processes by sending a message on this socket
+# a new socket pair is created centrally, and each end is passed
+# to one of the processes
+def test_non_listen_connection(trp):
+    # create a process with a socketpair back here
+    # create another process with a socketpair back here
+    # tell the first process to send a message to the second process
+    # locally it will co-ordinate the connection
+
+    #forkit = multiprocessing.get_context('forkserver')
+    central_address = "central"
+    with make_simple(central_address) as ib:
+
+        # create a process with a socketpair back here
+        def my_spawn(f):
+            (local_s, remote_s) = sck.socketpair()
+
+            def spawned_process_wrapper(csck, f):
+                try:
+                    yeshup.yeshup_me()
+                    new_ib = make_with_socket(csck, central_address, os.getpid())
+                    new_ib.connect = functools.partial(Inbox.connect_using_central,
+                                                       new_ib, central_address)
+                    new_ib.central = central_address
+                    x = f(new_ib)
+                    csck.send_value(x)
+                except:
+                    traceback.print_exc()
+            p = multiprocessing.Process(target=spawned_process_wrapper, args=[remote_s, f])
+            p.start()
+            ib.attach_socket(p.pid, local_s)
+            return p.pid
+
+
+        def my_process1(ib):
+            trigger_to_send = ib.receive()
+            match trigger_to_send:
+                 case ("send", addr):
+                     ib.send(addr, (os.getpid(), "hello"))
+                 case x:
+                     raise Exception(f"excepted send,addr, got {trigger_to_send}")
+
+        # create another process with a socketpair back here
+        def my_process2(ib):
+            x = ib.receive()
+            return (os.getpid(),x)
+        
+        process_1 = my_spawn(my_process1)
+        process_2 = my_spawn(my_process2)
+
+        # tell the first process to send a message to the second process
+        ib.send(process_1, ("send", process_2))
+
+        # expect the process to ask for a connection
+        # create the connection and send to both processes
+        match ib.receive():
+            case (from_addr, "connect-to", connect_addr):
+                (sidea, sideb) = sck.socketpair()
+                ib.send(connect_addr, ("have-a-connection", from_addr))
+                ib.send_socket(connect_addr, sideb)
+                ib.send(from_addr, ("have-a-connection", connect_addr))
+                ib.send_socket(from_addr, sidea)
+            case x:
+                raise Exception(f"expected from,'connect-to',to, got {x}")
+        x = ib.receive()
+        trp.assert_equal("nonlistensocketconnect", (process_2, (process_1,'hello')), x)

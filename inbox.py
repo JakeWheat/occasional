@@ -86,6 +86,7 @@ class Inbox:
             self.connect = functools.partial(Inbox.default_connect, self)
         else:
             self.connect = connect
+        self.connection_flag = None
 
     def close(self):
         if self.srv is not None:
@@ -134,6 +135,11 @@ class Inbox:
                     if self.disconnect_notify:
                         self.q.put(("client-disconnected", raddr))
                     break
+                case ("have-a-connection", new_raddr):
+                    rsock = sock.receive_sock()
+                    self.attach_socket(new_raddr, rsock)
+                    if self.connection_flag == new_raddr:
+                        self.q.put(x)
                 case _:
                     self.q.put(x)
 
@@ -172,6 +178,19 @@ and call close in the finally
                 # todo: how to handle this properly
                 print(f"got bad handshake: {x}")
 
+    def connect_using_central(self, central_addr, my_addr, connect_addr):
+        self.send(central_addr, (my_addr, "connect-to", connect_addr))
+        def m(x):
+            match x:
+                case ("have-a-connection", a) if a == connect_addr:
+                    return True
+                case ("have-a-connection", a):
+                    raise Exception(f"unexpected connection from {a}, expecting {connect_addr}")
+        self.receive(match=m)
+        sock = self.connection_cache[connect_addr]
+        return sock
+
+    
     def send(self, tgt, msg):
         if tgt == self.addr:
             # self send, skip pickling and sending over a socket
@@ -181,6 +200,7 @@ and call close in the finally
             with self.lock:
                 if tgt not in self.connection_cache:
                     connect = True
+                    self.connection_flag = tgt
             if connect == True:
                 sock = self.connect(self.addr, tgt)
                 with self.lock:
@@ -188,8 +208,19 @@ and call close in the finally
             else:
                 with self.lock:
                     sock = self.connection_cache[tgt]
+            with self.lock:
+                if self.connection_flag == tgt:
+                    self.connection_flag = None
             sock.send_value(msg)
 
+    def send_socket(self, tgt, sendsock):
+        #assert(type(tgt) is str)
+        with self.lock:
+            if tgt not in self.connection_cache:
+                raise Exception("cannot send socket when not connected to {ib.addr}")
+            sock = self.connection_cache[tgt]
+        sock.send_sock(sendsock)
+        
         
     """
 
@@ -359,4 +390,18 @@ def make_with_server(disconnect_notify=False):
     s.addr = s.srv.addr
     return s
 
-        
+# create a inbox which has a master socket connection
+# and connects via this socket without listening
+def make_with_socket(ms, nm, sladdr, disconnect_notify=False):
+    #assert(type(nm) is str)
+    #assert(type(sladdr) is str)
+    s = Inbox(disconnect_notify=disconnect_notify)
+    s.addr = sladdr
+    s.attach_socket(nm, ms)
+    return s
+
+# make an inbox with no connections and no listener
+def make_simple(addr, disconnect_notify=False):
+    s = Inbox(disconnect_notify=disconnect_notify)
+    s.addr = addr
+    return s
