@@ -80,6 +80,7 @@ class Inbox:
         self.connection_cache = {}
         self.srv = None
         self.addr = None
+        self.lock = threading.RLock()
 
     # make an inbox with a socket server listening for connections
     @classmethod
@@ -94,7 +95,9 @@ class Inbox:
     def close(self):
         if self.srv is not None:
             self.srv.close()
-        for i in self.connection_cache.values():
+        with self.lock:
+            l = list(self.connection_cache.values())
+        for i in l:
             i.close()
         # todo: wipe the queue, close all the cached connections
         # join all the background threads
@@ -119,7 +122,8 @@ class Inbox:
     # this means this socket can be used to send messages to
     # it's address, and it will be read from using the usual thread
     def attach_socket(self, raddr, sock):
-        self.connection_cache[raddr] = sock
+        with self.lock:
+            self.connection_cache[raddr] = sock
         self.setup_read_handler(sock)
         
     # the accept handler is used for new incoming connections
@@ -129,7 +133,8 @@ class Inbox:
         # the handshake tells us what address it's for
         match sock.receive_value():
             case ("hello my name is", raddr):
-                self.connection_cache[raddr] = sock
+                with self.lock:
+                    self.connection_cache[raddr] = sock
                 #print(f"handshake from {raddr}")
             case x:
                 # todo: how to handle this properly
@@ -170,12 +175,18 @@ and call close in the finally
             # self send, skip pickling and sending over a socket
             self.q.put(msg)
         else:
-            if tgt not in self.connection_cache:
+            connect = False
+            with self.lock:
+                if tgt not in self.connection_cache:
+                    connect = True
+            if connect == True:
                 sock = Inbox.default_connect_and_handshake(self.addr, tgt)
-                self.connection_cache[tgt] = sock
+                with self.lock:
+                    self.connection_cache[tgt] = sock
                 self.setup_read_handler(sock)
             else:
-                sock = self.connection_cache[tgt]
+                with self.lock:
+                    sock = self.connection_cache[tgt]
             sock.send_value(msg)
 
         
