@@ -55,6 +55,7 @@ import signal
 import sck
 import traceback
 import yeshup
+import dill
 
 class ExitValException(Exception):
     def __init__(self,val):
@@ -64,31 +65,45 @@ class ExitErrorException(Exception):
     def __init__(self,val):
         self.val = val
 
-def spawn(f, daemon=False):
 
+def spawned_process_wrapper(client_s, uf):
+    yeshup.yeshup_me()
+    p_res = None
+    try:
+        f = dill.loads(uf)
+        ret = f(client_s)
+        if ret != None:
+            p_res = ("process-exit", "ok", ret)
+    except SystemExit:
+        raise
+    except ExitValException as e:
+        p_res = ("process-exit", "ok", e.val)
+    except ExitErrorException as e:
+        einf = sys.exc_info()
+        p_res = ("process-exit", "error", (e.val, traceback.extract_tb(einf[2])))
+    except:
+        einf = sys.exc_info()
+        p_res = ("process-exit", "error", (einf[1], traceback.extract_tb(einf[2])))
+    if p_res is not None:
+        client_s.send_value(p_res)
+
+def spawn(f, daemon=False, ctx=None):
+
+    # how to spawn a process? There is a problem:
+    # multiprocessing uses the regular pickle, which doesn't support
+    # all the messages want to send (complex closures) that dill does support
+    # but can't send sockets using dill ...
+    # solution: launch the multiprocessing process with the socket,
+    # and the rest of the code with dill manually applied
+    # then undill it in the child process manually
+    
     (server_s, client_s) = sck.socketpair()
 
-    def spawned_process_wrapper(client_s, f):
-        yeshup.yeshup_me()
-        p_res = None
-        try:
-            ret = f(client_s)
-            if ret != None:
-                p_res = ("process-exit", "ok", ret)
-        except SystemExit:
-            raise
-        except ExitValException as e:
-            p_res = ("process-exit", "ok", e.val)
-        except ExitErrorException as e:
-            einf = sys.exc_info()
-            p_res = ("process-exit", "error", (e.val, traceback.extract_tb(einf[2])))
-        except:
-            einf = sys.exc_info()
-            p_res = ("process-exit", "error", (einf[1], traceback.extract_tb(einf[2])))
-        if p_res is not None:
-            client_s.send_value(p_res)
-    
-    p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, f], daemon=daemon)
+    uf = dill.dumps(f)
+    if ctx is not None:
+        p = ctx.Process(target=spawned_process_wrapper, args=[client_s, uf], daemon=daemon)
+    else:
+        p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, uf], daemon=daemon)
     p.start()
     return (p, server_s)
 
