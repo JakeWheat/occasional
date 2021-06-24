@@ -467,3 +467,23 @@ instead of continually stretching
         ib.receive()
         ib.receive()
         ib.receive()
+
+
+
+def test_disconnect_notification(trp):
+    with Inbox.make_with_server(disconnect_notify=False) as ib:
+        with Inbox.make_with_server() as ib2:
+            ib2.send(ib.addr, "msg")
+        x = ib.receive()
+        trp.assert_equal("check msg", "msg", x)
+        x = ib.receive(timeout=0.1)
+        trp.assert_equal("check no disonnect message", ReceiveTimeout(), x)
+    with Inbox.make_with_server(disconnect_notify=True) as ib:
+        with Inbox.make_with_server() as ib2:
+            ib2.send(ib.addr, "msg1")
+            addr = ib2.addr
+        x = ib.receive()
+        trp.assert_equal("check msg", "msg1", x)
+        x = ib.receive(timeout=0.1)
+        trp.assert_equal("check disconnect message", ("client-disconnected", addr), x)
+        

@@ -68,7 +68,7 @@ class ReceiveTimeout:
 
 
 class Inbox:
-    def __init__(self):
+    def __init__(self, disconnect_notify=False):
         self.q = queue.Queue()
         self.q_buffer = []
         # the connection cache is used to reuse outgoing connections
@@ -81,11 +81,12 @@ class Inbox:
         self.srv = None
         self.addr = None
         self.lock = threading.RLock()
+        self.disconnect_notify = disconnect_notify
 
     # make an inbox with a socket server listening for connections
     @classmethod
-    def make_with_server(_):
-        s = Inbox()
+    def make_with_server(_, disconnect_notify=False):
+        s = Inbox(disconnect_notify=disconnect_notify)
         s.srv = sck.make_socket_server(
             functools.partial(Inbox.accept_handler,s),
             daemon=True)
@@ -111,9 +112,9 @@ class Inbox:
     # and adds to the inbox queue
     # todo: save the threads and join them when the inbox is closed
     # join them when the socket is closed
-    def setup_read_handler(self, sock):
+    def setup_read_handler(self, sock, raddr):
         t = threading.Thread(target=Inbox.connection_handler,
-                             args=[self,sock],
+                             args=[self,sock, raddr],
                              daemon=True)
         t.start()
         
@@ -124,7 +125,7 @@ class Inbox:
     def attach_socket(self, raddr, sock):
         with self.lock:
             self.connection_cache[raddr] = sock
-        self.setup_read_handler(sock)
+        self.setup_read_handler(sock, raddr)
         
     # the accept handler is used for new incoming connections
     def accept_handler(self, sock, _):
@@ -135,21 +136,27 @@ class Inbox:
             case ("hello my name is", raddr):
                 with self.lock:
                     self.connection_cache[raddr] = sock
+                self.connection_handler(sock, raddr)
                 #print(f"handshake from {raddr}")
             case x:
                 # todo: how to handle this properly
                 print(f"got bad handshake: {x}")
-        # read incoming messages
-        self.connection_handler(sock)
 
     # connection handler is used for outgoing and incoming connections
     # to read incoming messages
-    def connection_handler(self,sock):
+    def connection_handler(self,sock, raddr):
         while True:
             x = sock.receive_value()
-            if x is None:
-                break
-            self.q.put(x)
+            match x:
+                case None:
+                    sock.close()
+                    with self.lock:
+                        del self.connection_cache[raddr]
+                    if self.disconnect_notify:
+                        self.q.put(("client-disconnected", raddr))
+                    break
+                case _:
+                    self.q.put(x)
 
             
         
@@ -183,7 +190,7 @@ and call close in the finally
                 sock = Inbox.default_connect_and_handshake(self.addr, tgt)
                 with self.lock:
                     self.connection_cache[tgt] = sock
-                self.setup_read_handler(sock)
+                self.setup_read_handler(sock, tgt)
             else:
                 with self.lock:
                     sock = self.connection_cache[tgt]
