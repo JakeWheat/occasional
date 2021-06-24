@@ -19,7 +19,7 @@ def spawn(f):
     q = multiprocessing.Queue()
     def wrap_f(q,f):
         yeshup.yeshup_me()
-        with Inbox.make_with_server() as ib:
+        with make_with_server() as ib:
             q.put(ib.addr)
             f(ib)
         
@@ -78,7 +78,7 @@ def assert_inbox_empty(trp, ib):
 # create a inbox, send a message to it, read the message out of the inbox
 
 def test_self_send(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(ib.addr, "hello")
         msg = ib.receive()
         trp.assert_equal("send and receive message in same process", "hello", msg)
@@ -107,7 +107,7 @@ def test_send_other_process(trp):
     # corrupted
 
     (addr,p) = spawn(functools.partial(srv,trp))
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(addr, (ib.addr, "stuff"))
         msg = ib.receive()
         trp.assert_equal("exchange messages with another process", ("got", "stuff"), msg)
@@ -162,7 +162,7 @@ def test_many_clients(trp):
 
     for i in clis:
         i.join()
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(saddr, "exit")
     sp.join()
 
@@ -224,7 +224,7 @@ def test_many_clients_pipelined(trp):
 
     for i in clis:
         i.join()
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(saddr, "exit")
     sp.join()
 
@@ -234,13 +234,13 @@ def test_many_clients_pipelined(trp):
 # timeout tests
 
 def test_timeout0_empty(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         msg = ib.receive(timeout=0)
         trp.assert_equal("receive timeout 0 empty inbox", ReceiveTimeout(), msg)
 
 
 def test_timeout0_nonempty(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(ib.addr, "xx")
         time.sleep(SHORT_WAIT)
         msg = ib.receive(timeout=0)
@@ -251,7 +251,7 @@ def test_timeout0_nonempty(trp):
 # then it reads the message without a timeout to make sure it comes through
 
 def test_timeout_timesout(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         send_after_delay(ib.addr, "xxx", SHORT_WAIT * 2)
         st = datetime.datetime.now()
         msg = ib.receive(timeout=SHORT_WAIT)
@@ -266,13 +266,13 @@ def test_timeout_timesout(trp):
 
 
 def test_timeout_explicit_infinity(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         send_after_delay(ib.addr, "xxx", SHORT_WAIT * 2)
         msg = ib.receive(timeout=Infinity())
         trp.assert_equal("timeout explicit infinity", "xxx", msg)
 
 def test_read_all_inbox(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         msgs = ['a', 'b', 'c']
         for i in msgs:
             ib.send(ib.addr, i)
@@ -284,7 +284,7 @@ def test_read_all_inbox(trp):
         trp.assert_equal("read all buffer empty", [], res2)
 
 def test_flush_buffer(trp):
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         msgs = ['a', 0, True]
         for i in msgs:
             ib.send(ib.addr, i)
@@ -303,7 +303,7 @@ def test_flush_buffer(trp):
 
 
 def test_selective_receive1(trp):
-    with Inbox.make_with_server() as ib: 
+    with make_with_server() as ib: 
 
         ib.send(ib.addr, ("message1",))
         ib.send(ib.addr, ("message1.5",))
@@ -332,7 +332,7 @@ def test_selective_receive1(trp):
         assert_inbox_empty(trp, ib)
 
 def test_selective_receive2(trp):
-    with Inbox.make_with_server() as ib: 
+    with make_with_server() as ib: 
         # timeout style two: using a case in the match function
         def match2(x):
             #print(x)
@@ -353,7 +353,7 @@ def test_selective_receive2(trp):
         assert_inbox_empty(trp, ib)
 
 def test_selective_receive3(trp):
-    with Inbox.make_with_server() as ib: 
+    with make_with_server() as ib: 
         # post a couple of messages that don't match
 
         ib.send(ib.addr, ("message1",))
@@ -394,7 +394,7 @@ receive with timeout
   let it timeout
   then do a regular receive
     """
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         ib.send(ib.addr, 1)
         def m(x):
             match x:
@@ -421,7 +421,7 @@ def test_timeout_with_unmatching_message2(trp):
 do a match which matches the second message
 then get the first message
 """
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         def m(x):
             match x:
                 case 2:
@@ -444,7 +444,7 @@ post the matching message at the end so it will match
 check the timeout took how long it's supposed to
 instead of continually stretching
 """
-    with Inbox.make_with_server() as ib:
+    with make_with_server() as ib:
         send_after_delay(ib.addr, 1, SHORT_WAIT * 0.8)
         send_after_delay(ib.addr, 1, SHORT_WAIT * 1.6)
         send_after_delay(ib.addr, 1, SHORT_WAIT * 2.4)
@@ -471,15 +471,15 @@ instead of continually stretching
 
 
 def test_disconnect_notification(trp):
-    with Inbox.make_with_server(disconnect_notify=False) as ib:
-        with Inbox.make_with_server() as ib2:
+    with make_with_server(disconnect_notify=False) as ib:
+        with make_with_server() as ib2:
             ib2.send(ib.addr, "msg")
         x = ib.receive()
         trp.assert_equal("check msg", "msg", x)
         x = ib.receive(timeout=0.1)
         trp.assert_equal("check no disonnect message", ReceiveTimeout(), x)
-    with Inbox.make_with_server(disconnect_notify=True) as ib:
-        with Inbox.make_with_server() as ib2:
+    with make_with_server(disconnect_notify=True) as ib:
+        with make_with_server() as ib2:
             ib2.send(ib.addr, "msg1")
             addr = ib2.addr
         x = ib.receive()

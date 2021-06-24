@@ -87,16 +87,6 @@ class Inbox:
         else:
             self.connect = connect
 
-    # make an inbox with a socket server listening for connections
-    @classmethod
-    def make_with_server(_, disconnect_notify=False):
-        s = Inbox(disconnect_notify=disconnect_notify)
-        s.srv = sck.make_socket_server(
-            functools.partial(Inbox.default_accept_handler,s),
-            daemon=True)
-        s.addr = s.srv.addr
-        return s
-
     def close(self):
         if self.srv is not None:
             self.srv.close()
@@ -360,3 +350,13 @@ code
 
     def __exit__(self,exception_type, exception_value, traceback):
         self.close()
+
+def make_with_server(disconnect_notify=False):
+    s = Inbox(disconnect_notify=disconnect_notify)
+    s.srv = sck.make_socket_server(
+        functools.partial(Inbox.default_accept_handler,s),
+        daemon=True)
+    s.addr = s.srv.addr
+    return s
+
+        
