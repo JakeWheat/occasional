@@ -95,6 +95,7 @@ import sqlite3
 import os
 import tempfile
 import signal
+import sck
 
 import spawn
 import yeshup
@@ -607,48 +608,84 @@ select * from quick_summary
 
     task_queue =  make_testcase_iterator(all_tests)
 
-    num_running = 0
+    def trace_usual(t):
+        match t:
+            case ("start_group", gid, nm, parent_id):
+                trace(con, ("start_group", gid, nm, parent_id, datetime.datetime.now()))
+            case ("end_group", gid):
+                trace(con, ("end_group", gid))
+            case (TestCase(), tid, parent_id, nm, fn):
+                trace(con, ("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
+            case x:
+                print(f"launch task? {x}")        
+        
+    
+    if num_jobs == 1:
 
-    def launch_task():
-        nonlocal num_running
+        # start a background thread to read the in queue
+        # this traces the messages as they come through
+        def in_queue_thread_worker():
+            con = connect_db(dbfile)
+            while True:
+                x = in_queue.get()
+                match x:
+                    case "finish":
+                        break
+                    case x:
+                        trace(con,x)
+        in_queue_thread = threading.Thread(target=in_queue_thread_worker)
+        in_queue_thread.start()
+
+        
         try:
+            (res_in, t_sock) = sck.socketpair()
+            wrap_sock_in(res_in, in_queue)
             while True:
                 t = next(task_queue)
+                trace_usual(t)
                 match t:
-                    case ("start_group", gid, nm, parent_id):
-                        trace(con, ("start_group", gid, nm, parent_id, datetime.datetime.now()))
-                    case ("end_group", gid):
-                        trace(con, ("end_group", gid))
                     case (TestCase(), tid, parent_id, nm, fn):
-                        trace(con, ("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
-                        p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
-                        wrap_sock_in(p[1], in_queue)
-
-                        num_running += 1
-                        return True
-                    case x:
-                        print(f"launch task? {x}")
+                        testcase_worker_wrapper(t[1], t[3], t[4], t_sock)
+                
         except StopIteration:
-            #print("all tasks done")
-            return None
+            pass
+        in_queue.put("finish")
+        in_queue_thread.join()
+    else:
+        num_running = 0
 
-    # start the initial workers
-    for _ in range(0,num_jobs):
-        x = launch_task()
-        if x is None:
-            break
+        def launch_task():
+            nonlocal num_running
+            try:
+                while True:
+                    t = next(task_queue)
+                    trace_usual(t)
+                    match t:
+                        case (TestCase(), tid, parent_id, nm, fn):
+                            p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
+                            wrap_sock_in(p[1], in_queue)
+                            num_running += 1
+                            return True
+            except StopIteration:
+                #print("all tasks done")
+                return None
+        # start the initial workers
+        for _ in range(0,num_jobs):
+            x = launch_task()
+            if x is None:
+                break
 
-    while True:
-        x = in_queue.get()
-        match x:
-            case ("end_testcase", _, _):
-                trace(con, x)
-                #print("worker finished")
-                num_running -= 1
-                if launch_task() is None and num_running == 0:
-                    break
-            case x:
-                trace(con, x)
+        while True:
+            x = in_queue.get()
+            match x:
+                case ("end_testcase", _, _):
+                    trace(con,x)
+                    #print("worker finished")
+                    num_running -= 1
+                    if launch_task() is None and num_running == 0:
+                        break
+                case x:
+                    trace(con,x)
 
     summarize()
         
