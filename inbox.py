@@ -67,10 +67,6 @@ class ReceiveTimeout:
         return isinstance(other, ReceiveTimeout)
 
 
-class RemoteInbox:
-    def __init__(self,addr):
-        self.addr = addr
-    
 class Inbox:
     def __init__(self):
         self.q = queue.Queue()
@@ -95,12 +91,6 @@ class Inbox:
         s.addr = s.srv.addr
         return s
 
-    @classmethod
-    def make_client(_, addr):
-        s = Inbox()
-        s.addr = addr
-        return s
-
     def close(self):
         if self.srv is not None:
             self.srv.close()
@@ -108,19 +98,11 @@ class Inbox:
             i.close()
         # todo: wipe the queue, close all the cached connections
         # join all the background threads
-        
-    # hack to allow sending an 'inbox' as a message
-    # instead of e.g having to remember to send ib.addr
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        del state['q']
-        del state['q_buffer']
-        del state['connection_cache']
-        del state['srv']
-        return state
 
-    def __setstate__(self, state):
-        self.__dict__.update(state)
+    # give error message when try to pickle the inbox instead
+    # of sending the address
+    def __getstate__(self):
+        raise Exception("send inbox.addr and not the inbox")
 
     # set up the background thread which reads from the socket
     # and adds to the inbox queue
@@ -183,19 +165,18 @@ and call close in the finally
         sock.send_value(("hello my name is", my_addr))
         return sock
     
-    def send(self, ib, msg):
-        if ib.addr == self.addr:
+    def send(self, tgt, msg):
+        if tgt == self.addr:
             # self send, skip pickling and sending over a socket
-            ib.q.put(msg)
+            self.q.put(msg)
         else:
-            if ib.addr not in self.connection_cache:
-                sock = Inbox.default_connect_and_handshake(self.addr, ib.addr)
-                self.connection_cache[ib.addr] = sock
+            if tgt not in self.connection_cache:
+                sock = Inbox.default_connect_and_handshake(self.addr, tgt)
+                self.connection_cache[tgt] = sock
                 self.setup_read_handler(sock)
             else:
-                sock = self.connection_cache[ib.addr]
+                sock = self.connection_cache[tgt]
             sock.send_value(msg)
-            #sock.close()
 
         
     """
@@ -292,7 +273,7 @@ code
 
 
         
-    def receive(ib, timeout=Infinity(), match=None):
+    def receive(self, timeout=Infinity(), match=None):
 
         # handle the timeout properly when we do repeated gets
         # on non matching items
@@ -303,22 +284,22 @@ code
             since_started = (datetime.datetime.now() - st).total_seconds()
             return timeout - since_started
 
-        if ib.q is None:
+        if self.q is None:
             raise Exception("cannot receive from non local inbox")
 
         def receive_unconditional():
-            nonlocal ib
-            if ib.q_buffer != []:
-                return ib.q_buffer.pop(0)
+            nonlocal self
+            if self.q_buffer != []:
+                return self.q_buffer.pop(0)
 
             match timeout:
                 case Infinity():
-                    ret = ib.q.get()
+                    ret = self.q.get()
                 case _:
                     try:
                         t = remaining_time()
                         if t >= 0:
-                            ret = ib.q.get(timeout=t)
+                            ret = self.q.get(timeout=t)
                         else:
                             ret = ReceiveTimeout()
                     except queue.Empty as e:
@@ -343,13 +324,13 @@ code
                 # in the cases, or as the return value
                 if isinstance(m,ReceiveTimeout):
                     #trace_print(f"received {m}")
-                    ib.q_buffer = mid_receive_buffer + ib.q_buffer
+                    self.q_buffer = mid_receive_buffer + self.q_buffer
                     return m
                 mid_receive_buffer.append(m)
                 ctu = True
             else:
                 #trace_print(f"received {m}")
-                ib.q_buffer = mid_receive_buffer + ib.q_buffer
+                self.q_buffer = mid_receive_buffer + self.q_buffer
                 return mx
 
             
