@@ -70,21 +70,23 @@ def spawn(f, daemon=False):
 
     def spawned_process_wrapper(client_s, f):
         yeshup.yeshup_me()
+        p_res = None
         try:
             ret = f(client_s)
             if ret != None:
-                client_s.send_value(ret)
+                p_res = ("process-exit", "ok", ret)
         except SystemExit:
             raise
         except ExitValException as e:
-            client_s.send_value(e.val)
+            p_res = ("process-exit", "ok", e.val)
         except ExitErrorException as e:
             einf = sys.exc_info()
-            client_s.send_value(("error", e.val, traceback.extract_tb(einf[2])))
+            p_res = ("process-exit", "error", (e.val, traceback.extract_tb(einf[2])))
         except:
             einf = sys.exc_info()
-            client_s.send_value(("error", einf[1], traceback.extract_tb(einf[2])))
-            
+            p_res = ("process-exit", "error", (einf[1], traceback.extract_tb(einf[2])))
+        if p_res is not None:
+            client_s.send_value(p_res)
     
     p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, f], daemon=daemon)
     p.start()
@@ -112,17 +114,22 @@ def spawn_error(val):
     # similar comments as above
     raise ExitErrorException(val)
 
+def get_process_exitval(p):
+    if p.exitcode == 0:
+        exit_reason = ("process-exit", "ok", ("exitcode", p.exitcode))
+    elif p.exitcode > 0:
+        exit_reason = ("process-exit", "error", ("exitcode", p.exitcode))
+    else:
+        exit_reason = ("process-exit", "error", ("signal", signal.strsignal(-p.exitcode)))
+    return exit_reason
+
 # wait for a process to exit and get it's exit value
 def wait_spawn(x):
     (p, server_s) = x
     p.join()
-    if p.exitcode >= 0:
-        exit_reason = ("exitcode", p.exitcode)
-    else:
-        exit_reason = ("signal", signal.strsignal(-p.exitcode))
     v = server_s.receive_value()
     if v is None:
-        return exit_reason
+        return get_process_exitval(p)
     else:
         return v
 

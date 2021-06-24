@@ -49,32 +49,38 @@ def helper_test_function(trp, msg, f, ex):
     trp.assert_equal(msg, ex, res)
 
 
+def ok(v):
+    return ("process-exit", "ok", v)
+
+def ev(v):
+    return ("process-exit", "error", v)
+
 def test_leave_function(trp):
     def my_f():
         pass
-    helper_test_function(trp, "leave function exit code", my_f, ("exitcode", 0))
+    helper_test_function(trp, "leave function exit code", my_f, ok(("exitcode", 0)))
 
 def test_python_exit_0(trp):
     def my_f():
         sys.exit()
-    helper_test_function(trp, "sys.exit()", my_f, ("exitcode", 0))
+    helper_test_function(trp, "sys.exit()", my_f, ok(("exitcode", 0)))
     
 
 def test_linux_exit_0(trp):
     def my_f():
         os._exit(0)
-    helper_test_function(trp, "os._exit(0)", my_f, ("exitcode", 0))
+    helper_test_function(trp, "os._exit(0)", my_f, ok(("exitcode", 0)))
 
 
 def test_python_exit_non_zero(trp):
     def my_f():
         sys.exit(1)
-    helper_test_function(trp, "sys.exit(1)", my_f, ("exitcode", 1))
+    helper_test_function(trp, "sys.exit(1)", my_f, ev(("exitcode", 1)))
 
 def test_linux_exit_non_zero(trp):
     def my_f():
         os._exit(1)
-    helper_test_function(trp, "os._exit(1)", my_f, ("exitcode", 1))
+    helper_test_function(trp, "os._exit(1)", my_f, ev(("exitcode", 1)))
 
 def test_sigterm(trp):
     def my_f():
@@ -83,7 +89,7 @@ def test_sigterm(trp):
     x = spawn_ignore(my_f)
     os.kill(get_spawn_pid(x), signal.SIGTERM)
     res = wait_spawn(x)
-    trp.assert_equal("sigterm", ('signal', 'Terminated'), res)
+    trp.assert_equal("sigterm", ev(('signal', 'Terminated')), res)
 
 
 def test_sigkill_0(trp):
@@ -93,7 +99,7 @@ def test_sigkill_0(trp):
     x = spawn_ignore(my_f)
     os.kill(get_spawn_pid(x), signal.SIGKILL)
     res = wait_spawn(x)
-    trp.assert_equal("sigterm", ('signal', 'Killed'), res)
+    trp.assert_equal("sigterm", ev(('signal', 'Killed')), res)
 
 # TODO: spawn an exe versions
 def test_exe_return_0(trp):
@@ -112,19 +118,19 @@ def test_exe_sigkill(trp):
 def test_return_from_function(trp):
     def my_f():
         return "bye"
-    helper_test_function(trp, "return value", my_f, "bye")
+    helper_test_function(trp, "return value", my_f, ok("bye"))
 
 def test_exit_value_function_0(trp):
     def my_f():
         spawn_exit(0)
     # exiting with an integer value is distinguishable
     # from the process exiting with os exit code 0
-    helper_test_function(trp, "exit value function", my_f, 0)
+    helper_test_function(trp, "exit value function", my_f, ok(0))
 
 def test_exit_value_function_non_trivial(trp):
     def my_f():
         spawn_exit("bye also")
-    helper_test_function(trp, "exit value function", my_f, "bye also")
+    helper_test_function(trp, "exit value function", my_f, ok("bye also"))
 
 class Tedious(Exception):
     def __init__(self,msg):
@@ -137,7 +143,7 @@ def test_uncaught_exception(trp):
     x = spawn_ignore(my_f)
     res = wait_spawn(x)
     match res:
-        case ("error", e, st):
+        case ("process-exit", "error", (e, st)):
             trp.assert_equal("exception class", Tedious, type(e))
             trp.assert_equal("exception value", "hi", e.msg)
             trp.assert_equal("stacktrace class", traceback.StackSummary, type(st))
@@ -151,7 +157,7 @@ def test_error_function(trp):
     x = spawn_ignore(my_f)
     res = wait_spawn(x)
     match res:
-        case ("error", e, st):
+        case ("process-exit", "error", (e, st)):
             trp.assert_equal("error exit", "wheee", e)
             trp.assert_equal("stacktrace class", traceback.StackSummary, type(st))
         case _:
