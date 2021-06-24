@@ -68,7 +68,7 @@ class ReceiveTimeout:
 
 
 class Inbox:
-    def __init__(self, disconnect_notify=False):
+    def __init__(self, disconnect_notify=False, connect=None):
         self.q = queue.Queue()
         self.q_buffer = []
         # the connection cache is used to reuse outgoing connections
@@ -82,13 +82,17 @@ class Inbox:
         self.addr = None
         self.lock = threading.RLock()
         self.disconnect_notify = disconnect_notify
+        if connect is None:
+            self.connect = functools.partial(Inbox.default_connect, self)
+        else:
+            self.connect = connect
 
     # make an inbox with a socket server listening for connections
     @classmethod
     def make_with_server(_, disconnect_notify=False):
         s = Inbox(disconnect_notify=disconnect_notify)
         s.srv = sck.make_socket_server(
-            functools.partial(Inbox.accept_handler,s),
+            functools.partial(Inbox.default_accept_handler,s),
             daemon=True)
         s.addr = s.srv.addr
         return s
@@ -114,7 +118,7 @@ class Inbox:
     # join them when the socket is closed
     def setup_read_handler(self, sock, raddr):
         t = threading.Thread(target=Inbox.connection_handler,
-                             args=[self,sock, raddr],
+                             args=[self, sock, raddr],
                              daemon=True)
         t.start()
         
@@ -127,24 +131,9 @@ class Inbox:
             self.connection_cache[raddr] = sock
         self.setup_read_handler(sock, raddr)
         
-    # the accept handler is used for new incoming connections
-    def accept_handler(self, sock, _):
-        # save the connection to the cache
-        # so it will be used to send outgoing messages
-        # the handshake tells us what address it's for
-        match sock.receive_value():
-            case ("hello my name is", raddr):
-                with self.lock:
-                    self.connection_cache[raddr] = sock
-                self.connection_handler(sock, raddr)
-                #print(f"handshake from {raddr}")
-            case x:
-                # todo: how to handle this properly
-                print(f"got bad handshake: {x}")
-
     # connection handler is used for outgoing and incoming connections
     # to read incoming messages
-    def connection_handler(self,sock, raddr):
+    def connection_handler(self, sock, raddr):
         while True:
             x = sock.receive_value()
             match x:
@@ -171,12 +160,28 @@ the only thing left there is yield the created inbox
 and call close in the finally
 """
 
-    def default_connect_and_handshake(my_addr, connect_addr):
-        #print(f"try to connect to {connect_addr}")
+    def default_connect(self,my_addr, connect_addr):
         sock = sck.connected_socket(connect_addr)
         sock.send_value(("hello my name is", my_addr))
+        self.setup_read_handler(sock, connect_addr)
         return sock
-    
+
+    # used for new incoming connections made using the default
+    # connect and handshake
+    def default_accept_handler(self, sock, _):
+        # save the connection to the cache
+        # so it will be used to send outgoing messages
+        # the handshake tells us what address it's for
+        match sock.receive_value():
+            case ("hello my name is", raddr):
+                with self.lock:
+                    self.connection_cache[raddr] = sock
+                # read incoming messages
+                self.connection_handler(sock, raddr)
+            case x:
+                # todo: how to handle this properly
+                print(f"got bad handshake: {x}")
+
     def send(self, tgt, msg):
         if tgt == self.addr:
             # self send, skip pickling and sending over a socket
@@ -187,10 +192,9 @@ and call close in the finally
                 if tgt not in self.connection_cache:
                     connect = True
             if connect == True:
-                sock = Inbox.default_connect_and_handshake(self.addr, tgt)
+                sock = self.connect(self.addr, tgt)
                 with self.lock:
                     self.connection_cache[tgt] = sock
-                self.setup_read_handler(sock, tgt)
             else:
                 with self.lock:
                     sock = self.connection_cache[tgt]
