@@ -93,9 +93,136 @@ import functools
 import datetime
 import sqlite3
 import os
+import tempfile
 
 import spawn
 import yeshup
+
+
+##############################################################################
+
+# wrap the confusing python dbi api
+
+def connect_db(cs):
+    dbconn = sqlite3.connect(cs)
+    dbconn.isolation_level = None
+    return dbconn
+
+def run_script(dbconn, sql):
+    cur = dbconn.cursor()
+    r = cur.executescript(sql)
+    return r
+
+def run_sql(dbconn, sql, args=None):
+    cur = dbconn.cursor()
+    if args is None:
+        cur.execute(sql)
+    else:
+        cur.execute(sql, args)
+    return cur.fetchall()
+
+##############################################################################
+
+# setup for the database
+# this is just a really quick easy way to log the results as it executes
+# and then summarize them at the end
+
+main_ddl = """
+
+-- PRAGMA foreign_keys = ON;
+
+-- speed up this slow motherfucker
+-- only using a file because want to update from multiple threads/processes
+-- switching to a file and turning on autocommit so multiple threads could
+-- update without getting deadlocked made it much slower, this speeds it up again
+-- this will need revisiting later when want persistence for logged test
+-- data in the presence of test framework crashes
+
+PRAGMA JOURNAL_MODE = OFF;
+PRAGMA SYNCHRONOUS = OFF;
+
+
+--create table test_runs (
+--   test_run_id integer primary key not null,
+--   test_run_start timestamp not null,
+--   test_run_end timestamp
+---- todo: maybe add machine id, invocation options, etc.
+--)
+   
+create table groups (
+    group_id integer primary key not null,
+    --test_run_id integer not null, -- references test_runs,
+    group_name text not null,
+    parent_group_id integer, -- references groups (group_id),
+    start_time timestamp not null,
+    open bool
+);
+
+create table test_cases (
+    test_case_id integer primary key not null,
+    test_case_name text not null,
+    parent_group_id integer not null, -- references groups (group_id),
+    start_time timestamp not null,
+    end_time timestamp,
+    open bool
+);
+create table test_assertions (
+    assertion_id integer primary key not null,
+    assertion_message text not null,
+    test_case_id integer not null, -- references test_cases,
+    atime timestamp not null,
+    status bool not null -- true == pass
+);
+
+
+
+-- test cases with the num asserts, num passed, and end times
+create view test_case_extras as
+select test_cases.*,
+            sum(1) as num_asserts,
+            coalesce(sum(1) filter (where status),0) as num_passed_asserts,
+            max(atime) as end_time
+     from test_assertions
+     natural inner join test_cases
+     group by test_case_id;
+
+-- groups with the num direct test cases and test cases passed
+-- todo: use with recursive to add the num groups and num groups passed
+-- and to add the end times
+create view group_extras as
+select groups.*,
+       sum(1) as num_test_cases,
+       coalesce(sum(1) filter (where num_asserts = num_passed_asserts), 0) as num_passed_test_cases
+from test_case_extras
+inner join groups
+on (groups.group_id = test_case_extras.parent_group_id)
+group by test_case_extras.parent_group_id;
+
+-- quick summary hack
+create view quick_summary as
+with tas as (
+select sum(1) filter (where status)
+       || ' / ' || sum(1) as ta
+from test_assertions),
+tcs as (
+select sum(1) filter (where num_asserts = num_passed_asserts)
+       || ' / ' || sum(1) as tc
+from test_case_extras)
+select tc || ' test cases,  ' || ta || ' assertions'
+from tas cross join tcs
+;
+/*
+todo:
+
+do a list with group ids going up to the top
++ the test case id
+then can use this to generate the text of the group path and the test case
+  through to the assertion
+
+*/
+
+
+"""
 
 
 ##############################################################################
@@ -304,7 +431,14 @@ def sysinfo_to_value(e):
     return ("".join(traceback.format_exception(*e, 0)),
             f"{type(e[0])}: {str(e[0])}",
             traceback.extract_tb(e[2]))
-   
+
+# remote test handle allows making test assertions from different
+# processes
+# it needs to be fixed so there's a test server listening on a tcp/ip
+# port instead of the test handle getting a socket
+# at the moment it only supports the top level process for each
+# test case run concurrently, and not any extra processes
+# they launch, which is needed
 class RemoteTestHandle(AssertVariations):
     def __init__(self, tid, sock):
         self.tid = tid
@@ -313,7 +447,6 @@ class RemoteTestHandle(AssertVariations):
         self.sock.send_value(("test_assert", self.tid, msg, True, datetime.datetime.now()))
     def fail(self, msg):
         self.sock.send_value(("test_assert", self.tid, msg, False, datetime.datetime.now()))
-
 
 ##############################################################################
 
@@ -324,7 +457,6 @@ class RemoteTestHandle(AssertVariations):
 def discover_tests(all_tests, glob, test_patterns):
     if all_tests is None:
         all_tests = get_modules_tests_from_glob(glob)
-
     test_patterns_re = []
     for i in test_patterns:
         test_patterns_re.append(re.compile(i))
@@ -361,20 +493,7 @@ def make_testcase_iterator(tree):
 
 ##############################################################################
 
-# new test runner, runs each test in a separate process
-
-# reads values from the sock and posts them to the queue, in a
-# background thread
-def wrap_sock_in(sock, q):
-    def post_it(sock,q):
-        while True:
-            x = sock.receive_value()
-            if x is None:
-                break
-            q.put(x)
-    t = threading.Thread(target=post_it, args=[sock,q], daemon=True)
-    t.start()
-
+# test runner that supports running each test in a separate process
 
 def testcase_worker_wrapper(tid, nm, f, status_socket):
     #print("start test")
@@ -387,104 +506,30 @@ def testcase_worker_wrapper(tid, nm, f, status_socket):
         h.fail(f"test suite {nm} failed with uncaught exception {x}")
     finally:
         status_socket.send_value(("end_testcase", tid, datetime.datetime.now()))
-        
-main_ddl = """
 
-PRAGMA foreign_keys = ON;
-
---create table test_runs (
---   test_run_id integer primary key not null,
---   test_run_start timestamp not null,
---   test_run_end timestamp
----- todo: maybe add machine id, invocation options, etc.
---)
-   
-create table groups (
-    group_id integer primary key not null,
-    --test_run_id integer not null, -- references test_runs,
-    group_name text not null,
-    parent_group_id integer references groups (group_id),
-    start_time timestamp not null,
-    open bool
-);
-
-create table test_cases (
-    test_case_id integer primary key not null,
-    test_case_name text not null,
-    parent_group_id integer not null references groups (group_id),
-    start_time timestamp not null,
-    end_time timestamp,
-    open bool
-);
-create table test_assertions (
-    assertion_id integer primary key not null,
-    assertion_message text not null,
-    test_case_id integer not null references test_cases,
-    atime timestamp not null,
-    status bool not null -- true == pass
-);
-
-
-
--- test cases with the num asserts, num passed, and end times
-create view test_case_extras as
-select test_cases.*,
-            sum(1) as num_asserts,
-            coalesce(sum(1) filter (where status),0) as num_passed_asserts,
-            max(atime) as end_time
-     from test_assertions
-     natural inner join test_cases
-     group by test_case_id;
-
--- groups with the num direct test cases and test cases passed
--- todo: use with recursive to add the num groups and num groups passed
--- and to add the end times
-create view group_extras as
-select groups.*,
-       sum(1) as num_test_cases,
-       coalesce(sum(1) filter (where num_asserts = num_passed_asserts), 0) as num_passed_test_cases
-from test_case_extras
-inner join groups
-on (groups.group_id = test_case_extras.parent_group_id)
-group by test_case_extras.parent_group_id;
-
--- quick summary hack
-create view quick_summary as
-with tas as (
-select sum(1) filter (where status)
-       || ' / ' || sum(1) as ta
-from test_assertions),
-tcs as (
-select sum(1) filter (where num_asserts = num_passed_asserts)
-       || ' / ' || sum(1) as tc
-from test_case_extras)
-select tc || ' test cases,  ' || ta || ' assertions'
-from tas cross join tcs
-;
-/*
-todo:
-
-do a list with group ids going up to the top
-+ the test case id
-then can use this to generate the text of the group path and the test case
-  through to the assertion
-
-*/
-
-
-"""
+# reads values from the sock and posts them to the queue, in a
+# background thread
+# temp until move to using occasional in the test framework
+def wrap_sock_in(sock, q):
+    def post_it(sock,q):
+        while True:
+            x = sock.receive_value()
+            if x is None:
+                break
+            q.put(x)
+    t = threading.Thread(target=post_it, args=[sock,q], daemon=True)
+    t.start()
 
         
-def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
+def do_test_run(dbfile, all_tests, glob, test_patterns, hide_successes, num_jobs):
 
-    #dbconn = sqlite3.connect('test.db')
-    dbconn = sqlite3.connect(':memory:')
-    cur = dbconn.cursor()
-    cur.executescript(main_ddl)
+    con = connect_db(dbfile)
+    run_script(con, main_ddl)
+    
     
     all_tests = discover_tests(all_tests, glob, test_patterns)
 
-    def trace(rcd):
+    def trace(con,rcd):
         """
 TODO:
 consider logging the traces
@@ -496,22 +541,22 @@ into a central database later
 """
         match rcd:
             case ('start_group', gid, nm, parent_id, starttime):
-                cur.execute("""
+                run_sql(con,"""
 insert into groups(group_id, group_name, parent_group_id, start_time, open)
 values(?, ?, ?, ?, true)""", (gid, nm, parent_id, starttime))
             case ('end_group', gid):
-                cur.execute("update groups set open = false where group_id=?", (gid,))
+                run_sql(con,"update groups set open = false where group_id=?", (gid,))
             case ("start_testcase", tid, gid, nm, starttime):
-                cur.execute("""
+                run_sql(con,"""
 insert into test_cases(test_case_id, test_case_name, parent_group_id, start_time, open)
 values (?, ?, ?, ?, true)""", (tid, nm, gid, starttime))
             case ('end_testcase', tid, endtime):
-                cur.execute("""
+                run_sql(con,"""
 update test_cases
 set end_time = ?, open = false
 where test_case_id = ?""", (endtime, tid))
             case ("test_assert", tid, msg, passed, tm):
-                cur.execute("""
+                run_sql(con,"""
 insert into test_assertions(assertion_message, test_case_id, atime, status)
 values(?,?,?,?)""", (msg, tid, tm, passed))
                 if not hide_successes or not passed:
@@ -524,17 +569,17 @@ values(?,?,?,?)""", (msg, tid, tm, passed))
 
     def summarize():
         print("-----------")
-        for row in cur.execute("""
+        for r in run_sql(con,"""
 select 'FAIL ' || test_case_name || '/' || assertion_message
 from test_cases
 natural inner join test_assertions
 where not status;"""):
-            print(row[0])
-        
-        for row in cur.execute("""
+            print(r[0])
+
+        for r in run_sql(con,"""
 select * from quick_summary
 """):
-            print(row[0])
+            print(r[0])
 
     # in queue is where all the messages coming from the test workers
     # to this process go to be handled in the main process
@@ -551,11 +596,11 @@ select * from quick_summary
                 t = next(task_queue)
                 match t:
                     case ("start_group", gid, nm, parent_id):
-                        trace(("start_group", gid, nm, parent_id, datetime.datetime.now()))
+                        trace(con, ("start_group", gid, nm, parent_id, datetime.datetime.now()))
                     case ("end_group", gid):
-                        trace(("end_group", gid))
+                        trace(con, ("end_group", gid))
                     case (TestCase(), tid, parent_id, nm, fn):
-                        trace(("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
+                        trace(con, ("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
                         p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
                         wrap_sock_in(p[1], in_queue)
 
@@ -577,27 +622,15 @@ select * from quick_summary
         x = in_queue.get()
         match x:
             case ("end_testcase", _, _):
-                trace(x)
+                trace(con, x)
                 #print("worker finished")
                 num_running -= 1
                 if launch_task() is None and num_running == 0:
                     break
             case x:
-                trace(x)
+                trace(con, x)
 
-    dbconn.commit()
-    
     summarize()
-
-    # maybe work around some suspected issues with lack of wait/join
-    # on threads/processes. Expect this to be cleaned up when move
-    # to the full occasional system
-    # if it isn't, it will provide a nice use case to develop
-    # the troubleshooting tracing system
-    os._exit(0)
-
-            
-
         
 ##############################################################################
 
@@ -623,7 +656,9 @@ def run_main_with_args(all_tests = None):
         create_tests_file(all_tests)
         # ./test_framework.py --generate-source | python3
     else:
-        do_test_run(all_tests, args.glob, args.test_pattern, args.hide_successes, args.num_jobs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'occasional_test_db')
+            do_test_run(path, all_tests, args.glob, args.test_pattern, args.hide_successes, args.num_jobs)
 
 if __name__ == "__main__":
     run_main_with_args(None)
