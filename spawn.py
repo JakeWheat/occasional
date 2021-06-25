@@ -56,6 +56,7 @@ import sck
 import traceback
 import yeshup
 import dill
+import os
 
 class ExitValException(Exception):
     def __init__(self,val):
@@ -65,28 +66,28 @@ class ExitErrorException(Exception):
     def __init__(self,val):
         self.val = val
 
-
 def spawned_process_wrapper(client_s, uf):
     yeshup.yeshup_me()
+    spawn_key = os.getpid()
     p_res = None
     try:
         f = dill.loads(uf)
         ret = f(client_s)
         if ret != None:
-            p_res = ("process-exit", "ok", ret)
+            p_res = ("process-exit", spawn_key, "ok", ret)
     except SystemExit:
         raise
     except ExitValException as e:
-        p_res = ("process-exit", "ok", e.val)
+        p_res = ("process-exit", spawn_key, "ok", e.val)
     except ExitErrorException as e:
         einf = sys.exc_info()
-        p_res = ("process-exit", "error", (e.val, traceback.extract_tb(einf[2])))
+        p_res = ("process-exit", spawn_key, "error", (e.val, traceback.extract_tb(einf[2])))
     except:
         einf = sys.exc_info()
-        p_res = ("process-exit", "error", (einf[1], traceback.extract_tb(einf[2])))
+        p_res = ("process-exit", spawn_key, "error", (einf[1], traceback.extract_tb(einf[2])))
     if p_res is not None:
         client_s.send_value(p_res)
-
+       
 def spawn(f, daemon=False, ctx=None):
 
     # how to spawn a process? There is a problem:
@@ -131,11 +132,14 @@ def spawn_error(val):
 
 def get_process_exitval(p):
     if p.exitcode == 0:
-        exit_reason = ("process-exit", "ok", ("exitcode", p.exitcode))
+        exit_reason = ("process-exit",  p.pid, "ok",
+                       ("exitcode", p.exitcode))
     elif p.exitcode > 0:
-        exit_reason = ("process-exit", "error", ("exitcode", p.exitcode))
+        exit_reason = ("process-exit",  p.pid, "error",
+                       ("exitcode", p.exitcode))
     else:
-        exit_reason = ("process-exit", "error", ("signal", signal.strsignal(-p.exitcode)))
+        exit_reason = ("process-exit", p.pid, "error",
+                       ("signal", signal.strsignal(-p.exitcode)))
     return exit_reason
 
 # wait for a process to exit and get it's exit value

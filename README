@@ -74,6 +74,21 @@ like this, that could be ported to other programming languages.
 It doesn't try to emulate the very fast process spawning and very fast
 message passing of Erlang.
 
+Architecture
+============
+
+It uses Unix sockets to monitor processes. Every user process is a
+Linux process. There is a central services process started by the
+system, every process in the system has a unix socket connection to
+this process. When you start a new process, it's the central services
+process that ultimately arranges the fork (using forkserver in python
+multiprocessing atm), and this central monitors the socket to detect
+when the spawned processes exit. Connecting to other local spawned
+processes is done via this central creating a socket pair and passing
+one socket to each of the two connecting processes (the connect is
+implicit when the first message is sent).
+
+
 
 Code overview
 =============

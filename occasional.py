@@ -36,51 +36,69 @@ def central(res_sock, puser_f):
         central_address = "central"
         with inbox.make_simple(central_address, disconnect_notify=True) as ib:
 
+            # map from pid/addr to (process object, maybe first exit value)
             processes = {}
 
-            def spawn_process_internal(f):
+            # list of triples of monitoring pid, monitored pid, mref
+            next_mref = 0
+            process_monitoring = []
 
-                def spawned_wrapper(f, csck):
-                    new_ib = inbox.make_with_socket(csck, central_address, os.getpid())
-                    new_ib.connect = functools.partial(inbox.Inbox.connect_using_central,
-                                                            new_ib, central_address)
-                    new_ib.central = central_address
-                    new_ib.spawn = functools.partial(spawn_fun, central_address, new_ib)
-                    return f(new_ib)
-                (p, sck) = spawn.spawn(functools.partial(spawned_wrapper, f),ctx=forkit)
+            def spawn_process_internal(f):
+                (p, sck) = spawn.spawn(functools.partial(spawned_wrapper, central_address, f),
+                                       ctx=forkit)
                 ib.attach_socket(p.pid, sck)
-                processes[p.pid] = p
+                processes[p.pid] = (p, None)
                 return p.pid
 
             process_zero = spawn_process_internal(user_f)
-            process_zero_exit = None
+
+            def add_monitor(addr,monitored_addr):
+                nonlocal next_mref
+                mref = next_mref
+                next_mref += 1
+                process_monitoring.append((addr, monitored_addr, mref))
+                return mref
 
             while True:
                 x = ib.receive()
                 match x:
-                    case ("process-exit", v0, v1):
-                        process_zero_exit = (v0,v1)
-                        # todo: only set if it's the first user process
-                        # have to add the addr to the process exit message
-                        # or something
+                    case ("process-exit", addr, v0, v1):
+                        # todo: check the process is in the table
+                        # check it doesn't already have a first exit val
+                        processes[addr] = (processes[addr][0], (v0,v1))
                     case ("client-disconnected", addr):
-                        # get the process corresponding to the addr
-                        p = processes[addr]
-                        p.join()
-                        # todo: process the exit val
+                        pe = processes[addr]
+                        pe[0].join()
+                        process_exit_val = pe[1]
+                        if process_exit_val is None:
+                            match spawn.get_process_exitval(pe[0]):
+                                case ("process-exit", _, v0, v1):
+                                    process_exit_val = (v0,v1)
+                                case _:
+                                    print(f"bad exit val: {x}")
+                        # if process zero, exit the central services
                         if addr == process_zero:
-                            x = spawn.get_process_exitval(p)
-                            match x:
-                                case ("process-exit", v0, v1):
-                                    if process_zero_exit is None:
-                                        process_zero_exit = (v0,v1)
+                            process_zero_exit = process_exit_val
                             break
+                        # ping all the monitoring processes
+                        for i in process_monitoring:
+                            if i[1] == addr:
+                                ib.send(i[0], ("down", i[2], i[1], process_exit_val))
+                        # clean up the process table
+                        del processes[addr]
+                        # clean up the monitoring table
+                        process_monitoring = [(p,m,r) for (p,m,r) in process_monitoring
+                                              if p != addr and m != addr]
                     case (ret, "ping"):
                         #print(f"cs got ping from {ret}")
                         ib.send(ret, ("pong",))
                     case (ret, "spawn", f):
                         new = spawn_process_internal(f)
                         ib.send(ret, ("spawned-ok", new))
+                    case (ret, "spawn-monitor", f):
+                        new = spawn_process_internal(f)
+                        mref = add_monitor(ret, new)
+                        ib.send(ret, ("spawned-ok", new, mref))
                     case (from_addr, "connect-to", connect_addr):
                         (sidea, sideb) = sck.socketpair()
                         ib.send(connect_addr, ("have-a-connection", from_addr))
@@ -97,7 +115,13 @@ def central(res_sock, puser_f):
         #print(sys.exc_info()[0])
         traceback.print_exc()
         raise
-        
+
+##############################################################################
+
+# spawn
+    
+# this is the function that is called by user code and runs in the user
+# process
 def spawn_fun(central_addr, ib, f):
     ib.send(central_addr, (ib.addr, "spawn", f))
     def m(x):
@@ -105,6 +129,27 @@ def spawn_fun(central_addr, ib, f):
             case ("spawned-ok", addr):
                 return addr
     return ib.receive(match=m)
+
+def spawn_monitor(central_addr, ib, f):
+    ib.send(central_addr, (ib.addr, "spawn-monitor", f))
+    def m(x):
+        match x:
+            case ("spawned-ok", addr, mref):
+                return (addr,mref)
+    return ib.receive(match=m)
+
+
+# this runs in the newly launched process to set things up and launch
+# the user function
+def spawned_wrapper(central_address, f, csck):
+    new_ib = inbox.make_with_socket(csck, central_address, os.getpid())
+    new_ib.connect = functools.partial(inbox.Inbox.connect_using_central,
+                                            new_ib, central_address)
+    new_ib.central = central_address
+    new_ib.spawn = functools.partial(spawn_fun, central_address, new_ib)
+    new_ib.spawn_monitor = functools.partial(spawn_monitor, central_address, new_ib)
+    return f(new_ib)
+
 
 ##############################################################################
 
@@ -118,7 +163,7 @@ def spawn_fun(central_addr, ib, f):
 # of the f process
 # start blocks until f exits
 
-def start(f):
+def run(f):
     (retvala, retvalb) = sck.socketpair()
     # protext against the user code that called this having threads
     # and stuff that isn't fork friendly
