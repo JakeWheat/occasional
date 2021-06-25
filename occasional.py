@@ -30,11 +30,19 @@ returns the result value of the initial user process
 
 forkit = multiprocessing.get_context('forkserver')
 
+class SendNotFoundException(Exception):
+    def __init__(self, addr):
+        self.addr = addr
+
 def central(res_sock, puser_f):
     try:
         user_f = dill.loads(puser_f)
         central_address = "central"
-        with inbox.make_simple(central_address, disconnect_notify=True) as ib:
+        def no_connect(_, connect_addr):
+            raise SendNotFoundException(connect_addr)
+             
+        with inbox.make_simple(central_address, disconnect_notify=True,
+                               connect=no_connect) as ib:
 
             # map from pid/addr to (process object, maybe first exit value)
             processes = {}
@@ -101,10 +109,22 @@ def central(res_sock, puser_f):
                         ib.send(ret, ("spawned-ok", new, mref))
                     case (from_addr, "connect-to", connect_addr):
                         (sidea, sideb) = sck.socketpair()
-                        ib.send(connect_addr, ("have-a-connection", from_addr))
-                        ib.send_socket(connect_addr, sideb)
-                        ib.send(from_addr, ("have-a-connection", connect_addr))
-                        ib.send_socket(from_addr, sidea)
+                        try:
+                            # there's a lot of things that need protection like this
+                            # in the central
+                            x = ib.send(connect_addr, ("have-a-connection", from_addr))
+                        except Exception as x:
+                            ib.send(from_addr, ("connection-error", f"send: process not found {x.addr}"))
+                        else:
+                            # todo: any of these 3 sends can fail because a process
+                            # has exited in the meantime, central should not break
+                            # when this happens, and if the calling process (from_addr)
+                            # is up, it should get notified
+                            ib.send_socket(connect_addr, sideb)
+                            ib.send(from_addr, ("have-a-connection", connect_addr))
+                            ib.send_socket(from_addr, sidea)
+                            
+                            
                     case _:
                         print(x)
 

@@ -140,6 +140,9 @@ class Inbox:
                     self.attach_socket(new_raddr, rsock)
                     if self.connection_flag == new_raddr:
                         self.q.put(x)
+                case ("connection-error", _):
+                    # pass back to calling thread
+                    self.q.put(x)
                 case _:
                     self.q.put(x)
 
@@ -186,6 +189,8 @@ and call close in the finally
                     return True
                 case ("have-a-connection", a):
                     raise Exception(f"unexpected connection from {a}, expecting {connect_addr}")
+                case ("connection-error", e):
+                    raise Exception(e)
         self.receive(match=m)
         sock = self.connection_cache[connect_addr]
         return sock
@@ -401,7 +406,7 @@ def make_with_socket(ms, nm, sladdr, disconnect_notify=False):
     return s
 
 # make an inbox with no connections and no listener
-def make_simple(addr, disconnect_notify=False):
-    s = Inbox(disconnect_notify=disconnect_notify)
+def make_simple(addr, disconnect_notify=False, connect=None):
+    s = Inbox(disconnect_notify=disconnect_notify, connect=connect)
     s.addr = addr
     return s

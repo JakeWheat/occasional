@@ -148,3 +148,66 @@ def test_spawn_monitor_exit_delay(trp):
         case _:
             trp.fail("test_spawn_monitor_exit_delay {v}")
 
+def test_monitoring_proc_exits(trp):
+    def monitored_proc(ib):
+        x = ib.receive()
+        ib.send(x, "leaving now")
+    def monitoring_proc(main_addr, ib):
+        (addr,_) = ib.spawn_monitor(monitored_proc)
+        ib.send(main_addr, addr)
+        # exits
+    def main_proc(ib):
+        # p0 starts a process to do the monitoring
+        # it starts a monitored process
+        # it sends the monitored process back to p0
+        # then it exits
+        # the monitored process waits for p0 to send
+        # a message, then it sends a reply and exits
+        # p0 gets this reply, then pings central services
+        # to check it's still going
+        monitoring = ib.spawn(functools.partial(monitoring_proc, ib.addr))
+        monitored_addr = ib.receive()
+        ib.send(monitored_addr, ib.addr)
+        match ib.receive():
+            case "leaving now":
+                pass
+            case x:
+                return x
+        ib.send(ib.central, (ib.addr, "ping"))
+        x = ib.receive()
+        return x
+    v = occasional.run(main_proc)
+    trp.assert_equal("test_monitoring_proc_exits", ("ok", ("pong",)), v)
+            
+# sketchy, but you get something usable for troubleshooting for the
+# time being
+def test_send_after_process_exited(trp):
+    def g(ib):
+        return "exit"
+        
+    def f(ib):
+        (addr,_) = ib.spawn_monitor(g)
+        x = ib.receive()
+        # todo: check it's exit?
+        ib.send(addr,"hello")
+        # see what happens
+        #print("here")
+    v = occasional.run(f)
+    match v:
+        case ("error", x) if "process not found" in str(x):
+            trp.tpass("test_send_after_process_exited")
+        case _:
+            trp.fail(f"test_send_after_process_exited {v}")
+
+
+def test_send_to_wrong_address1(trp):
+        
+    def f(ib):
+        ib.send((1,2),"hello")
+        # see what happens
+    v = occasional.run(f)
+    match v:
+        case ("error", x) if "process not found" in str(x):
+            trp.tpass("test_send_to_wrong_address1")
+        case _:
+            trp.fail(f"test_send_to_wrong_address1 {v}")
