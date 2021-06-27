@@ -22,41 +22,30 @@ def test_system_exit_0(trp):
 
     
 def test_ping_cs(trp):
-    def f(ib):
-        #print(f"send to {cs.addr}")
+    def f(trp, ib):
         ib.send(ib.central, (ib.addr, "ping"))
         x = ib.receive()
-        return x
-        # todo: restore this here when the test framework
-        # is updated
-        #trp.assert_equal("pong", ("pong",), x)
-    v = occasional.run(f)
-    trp.assert_equal("pong return val", ("ok", ("pong",)), v)
+        trp.assert_equal("pong", ("pong",), x)
+    occasional.run(functools.partial(f, trp))
 
-def test_simple_spawn(trp):
+def test_simple_spawn(trp, mod=""):
     def g(ib):
         (addr, msg) = ib.receive()
         ib.send(addr, ("return", msg))
-    def f(ib):
+    def f(trp, ib):
         msp = ib.spawn(g)
         ib.send(msp, (ib.addr, "test"))
         x = ib.receive()
-        return x
-        #trp.assert_equal("spawn return", ("return", "test"), x)
-    v = occasional.run(f)
-    trp.assert_equal("simple spawn exit", ("ok", ("return", "test")), v)
+        trp.assert_equal(f"{mod} spawn return", ("return", "test"), x)
+    occasional.run(functools.partial(f, trp))
 
-
-"""
-TODO
-check nested occasional -> this is important for the testing
-  do the test above:
-    launch a process
-      it launches another process
-        asks that process to start
-          that process does the test above
-        then sends a message back to the original process
-"""
+# sanity check to see if it looks like running a new occasional
+# instance from an occasional process works
+def test_nested_occasional(trp):
+    def f(trp, ib):
+        test_simple_spawn(trp, "nested")
+    
+    occasional.run(functools.partial(f, trp))
 
 def test_check_right_exit(trp):
     # start a process, then exit it, then exit the main
@@ -75,46 +64,46 @@ def check_down_message(trp,msg,exp,got):
        case ('down', _, _, x):
            trp.assert_equal(msg, exp, x)
        case _:
-           trp.fail(f"{msg} {got}")
+           trp.fail(f"{msg} didn't get expected down message: {exp} {got}")
     
 def check_monitor_exit(trp, msg, exit_val, got):
     match got:
        case ('ok', x):
            check_down_message(trp, msg, exit_val, x)
        case _:
-           trp.fail(f"{msg} {got}")
+           trp.fail(f"{msg} didn't get expected down message: {got}")
 
 def test_spawn_monitor_exit_0(trp):
     def g(ib):
         sys.exit(0)
-    def f(ib):
+    def f(trp, ib):
         ib.spawn_monitor(g)
         x = ib.receive()
-        return x
-    v = occasional.run(f)
-    check_monitor_exit(trp, "spawn_monitor_exit_0",
-                       ('ok', ('exitcode', 0)), v)
+        check_down_message(trp, "spawn_monitor_exit_0",
+                           ('ok', ('exitcode', 0)), x)
+    occasional.run(functools.partial(f,trp))
 
 
 def test_spawn_monitor_sigterm(trp):
     def g(ib):
         os.kill(os.getpid(), signal.SIGTERM)
-    def f(ib):
-        x = ib.spawn_monitor(g)
-        return ib.receive()
-    v = occasional.run(f)
-    check_monitor_exit(trp, "spawn_monitor_sigterm",
-                       ('error', ('signal', 'Terminated')), v)
+    def f(trp, ib):
+        ib.spawn_monitor(g)
+        x = ib.receive()
+        check_down_message(trp, "spawn_monitor_sigterm",
+                           ('error', ('signal', 'Terminated')), x)
+        
+    occasional.run(functools.partial(f, trp))
 
 def test_spawn_monitor_return_val(trp):
     def g(ib):
         return "exit value"
     def f(ib):
-        x = ib.spawn_monitor(g)
-        return ib.receive()
-    v = occasional.run(f)
-    check_monitor_exit(trp, "spawn_monitor_return_val",
-                       ("ok", "exit value"), v)
+        ib.spawn_monitor(g)
+        x = ib.receive()
+        check_down_message(trp, "spawn_monitor_return_val",
+                           ("ok", "exit value"), x)
+    occasional.run(f)
 
 def test_spawn_monitor_uncaught_exception(trp):
     def g(ib):
@@ -178,7 +167,24 @@ def test_monitoring_proc_exits(trp):
         return x
     v = occasional.run(main_proc)
     trp.assert_equal("test_monitoring_proc_exits", ("ok", ("pong",)), v)
-            
+
+
+def raises_satisfies(trp, msg, f, pred):
+    try:
+        f()
+        trp.fail(f"expected exception {msg} but didn't raise)")
+    except Exception as e:
+        if pred(e):
+            trp.tpass(msg)
+        else:
+            trp.fail(f"{msg} exception failed predicate {type(e)} {e}")
+
+def exception_matches_text(txt, e):
+    return txt in str(e)
+
+def is_process_not_found(e):
+    return "process not found" in str(e)
+    
 # sketchy, but you get something usable for troubleshooting for the
 # time being
 def test_send_after_process_exited(trp):
@@ -192,22 +198,113 @@ def test_send_after_process_exited(trp):
         ib.send(addr,"hello")
         # see what happens
         #print("here")
-    v = occasional.run(f)
-    match v:
-        case ("error", x) if "process not found" in str(x):
-            trp.tpass("test_send_after_process_exited")
-        case _:
-            trp.fail(f"test_send_after_process_exited {v}")
-
+    raises_satisfies(trp, "test_send_after_process_exited",
+                     lambda: occasional.run(f), is_process_not_found)
 
 def test_send_to_wrong_address1(trp):
         
     def f(ib):
         ib.send((1,2),"hello")
         # see what happens
-    v = occasional.run(f)
-    match v:
-        case ("error", x) if "process not found" in str(x):
-            trp.tpass("test_send_to_wrong_address1")
-        case _:
-            trp.fail(f"test_send_to_wrong_address1 {v}")
+    raises_satisfies(trp, "test_send_to_wrong_address1",
+                     lambda: occasional.run(f), is_process_not_found)
+
+
+def test_main_system_exit_nonzero(trp):
+    def f(ib):
+        os._exit(1)
+    raises_satisfies(trp, "test_main_system_exit_nonzero",
+                     lambda: occasional.run(f),
+                     functools.partial(exception_matches_text, "exited with exit code"))
+
+def test_main_signal(trp):
+    def f(ib):
+        os.kill(os.getpid(), signal.SIGTERM)
+    raises_satisfies(trp, "test_main_signal",
+                     lambda: occasional.run(f),
+                     functools.partial(exception_matches_text, "exited with signal"))
+
+    
+    
+def test_non_callable_main(trp):
+    not_a_function = 5
+    raises_satisfies(trp, "test_non_callable_main",
+                     lambda: occasional.run(not_a_function),
+                     functools.partial(exception_matches_text, "is not callable"))
+
+    
+def test_non_callable_spawn(trp):
+    def f(trp, ib):
+        not_a_function = 5
+        raises_satisfies(trp, "test_non_callable_spawn",
+                     lambda: ib.spawn(not_a_function),
+                     functools.partial(exception_matches_text, "is not callable"))
+    occasional.run(functools.partial(f,trp))
+
+def test_too_few_args_main(trp):
+    def f(ib, x, y):
+        pass
+    raises_satisfies(trp, "test_too_few_args_main",
+                     lambda: occasional.run(functools.partial(f,1)),
+                     functools.partial(exception_matches_text,
+                                       "missing 1 required positional argument"))
+
+def test_too_many_args_main(trp):
+    def f(ib, x, y):
+        pass
+    raises_satisfies(trp, "test_too_many_args_main",
+                     lambda: occasional.run(functools.partial(f,1,2,3)),
+                     functools.partial(exception_matches_text,
+                                       "takes 3 positional arguments but 4 were given"))
+
+    
+def test_too_many_args_spawn(trp):
+
+    def f(trp, ib):
+        def g(x,y,ib):
+            pass
+
+        ib.spawn_monitor(functools.partial(g,1,2,3))
+        x = ib.receive()
+        # doesn't come through as an exception on the spawn
+        # can't work out how to do this
+        match x:
+           case ('down', _, _, ('error', (x,_))) if 'takes 3 positional arguments but 4 were given' in str(x):
+               trp.tpass("test_too_many_args_spawn")
+           case _:
+               trp.tfail(f"test_too_many_args_spawn: expected ('down', _, _, ('error', ('args error', _))) but got {x}")
+        
+    occasional.run(functools.partial(f,trp))
+
+def test_error_no_monitor(trp):
+    def g(ib):
+        raise Exception("goodbye")
+
+    def f(ib):
+        ib.spawn(g)
+        time.sleep(0.1)
+
+    occasional.run(f)
+    # TODO: run this test in another process
+    # and capture the stdout/stderr and check for the trace message
+    trp.tpass("test_error_no_monitor")
+
+def test_sub_process_killed(trp):
+    def g(ib):
+        raise Exception("goodbye")
+
+    def f(ib):
+        ib.spawn(g)
+
+    occasional.run(f)
+    # if the g keeps running normally after f exits,
+    # it will try to send a message to central on a broken socket,
+    # because central has exited, want to avoid this
+    # the tricky thing is that we want errors if this happens at
+    # any other time
+    # TODO: run this test in another process
+    # and capture the stdout/stderr and check for messages
+    trp.tpass("test_error_no_monitor")
+
+    
+        

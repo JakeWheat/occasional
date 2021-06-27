@@ -50,6 +50,7 @@ a single exit value for a process.
 """
 
 import multiprocessing
+import multiprocessing_wrap
 import sys
 import signal
 import sck
@@ -66,12 +67,11 @@ class ExitErrorException(Exception):
     def __init__(self,val):
         self.val = val
 
-def spawned_process_wrapper(client_s, uf):
+def spawned_process_wrapper(client_s, f):
     yeshup.yeshup_me()
     spawn_key = os.getpid()
     p_res = None
     try:
-        f = dill.loads(uf)
         ret = f(client_s)
         if ret != None:
             p_res = ("process-exit", spawn_key, "ok", ret)
@@ -81,10 +81,10 @@ def spawned_process_wrapper(client_s, uf):
         p_res = ("process-exit", spawn_key, "ok", e.val)
     except ExitErrorException as e:
         einf = sys.exc_info()
-        p_res = ("process-exit", spawn_key, "error", (e.val, traceback.extract_tb(einf[2])))
+        p_res = ("process-exit", spawn_key, "error", (e.val, "".join(traceback.format_tb(einf[2]))))
     except:
         einf = sys.exc_info()
-        p_res = ("process-exit", spawn_key, "error", (einf[1], traceback.extract_tb(einf[2])))
+        p_res = ("process-exit", spawn_key, "error", (einf[1], "".join(traceback.format_tb(einf[2]))))
     if p_res is not None:
         client_s.send_value(p_res)
        
@@ -100,12 +100,10 @@ def spawn(f, daemon=False, ctx=None):
     
     (server_s, client_s) = sck.socketpair()
 
-    uf = dill.dumps(f)
-    if ctx is not None:
-        p = ctx.Process(target=spawned_process_wrapper, args=[client_s, uf], daemon=daemon)
-    else:
-        p = multiprocessing.Process(target=spawned_process_wrapper, args=[client_s, uf], daemon=daemon)
-    p.start()
+    p = multiprocessing_wrap.start_process(target=spawned_process_wrapper,
+                                           args=[client_s, f],
+                                           daemon=daemon,
+                                           ctx=ctx)
     return (p, server_s)
 
 

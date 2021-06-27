@@ -1,5 +1,6 @@
 
 import multiprocessing
+import multiprocessing_wrap
 import functools
 import time
 import datetime
@@ -18,16 +19,18 @@ SHORT_WAIT = 0.01
 # this runs f in another process, passes it a inbox
 # it returns the inbox address to send to that server
 def spawn(f):
-    q = multiprocessing.Queue()
-    def wrap_f(q,f):
+    # used only to get the address of the spawned process's
+    # listening socket
+    (loc,rem) = sck.socketpair()
+
+    def wrap_f(sck,f):
         yeshup.yeshup_me()
         with make_with_server() as ib:
-            q.put(ib.addr)
+            sck.send_value(ib.addr)
             f(ib)
         
-    p = multiprocessing.Process(target=wrap_f, args=[q,f])
-    p.start()
-    addr = q.get()
+    p = multiprocessing_wrap.start_process(target=wrap_f, args=[rem,f])
+    addr = loc.receive_value()
     return (addr, p)
 
 def delayed_send_process(addr, msg, tm, ib):
@@ -521,8 +524,7 @@ def test_non_listen_connection(trp):
                     csck.send_value(x)
                 except:
                     traceback.print_exc()
-            p = multiprocessing.Process(target=spawned_process_wrapper, args=[remote_s, f])
-            p.start()
+            p = multiprocessing_wrap.start_process(target=spawned_process_wrapper, args=[remote_s, f])
             ib.attach_socket(p.pid, local_s)
             return p.pid
 

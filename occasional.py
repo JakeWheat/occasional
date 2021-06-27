@@ -1,10 +1,12 @@
 
 import multiprocessing
+import multiprocessing_wrap
 import functools
 import os
 import sys
 import traceback
 import dill
+import signal
 
 import spawn
 import inbox
@@ -34,9 +36,8 @@ class SendNotFoundException(Exception):
     def __init__(self, addr):
         self.addr = addr
 
-def central(res_sock, puser_f):
+def central(res_sock, user_f):
     try:
-        user_f = dill.loads(puser_f)
         central_address = "central"
         def no_connect(_, connect_addr):
             raise SendNotFoundException(connect_addr)
@@ -52,13 +53,13 @@ def central(res_sock, puser_f):
             process_monitoring = []
 
             def spawn_process_internal(f):
+                if not callable(f):
+                    raise Exception(f"spawn function is not callable {type(f)} {f}")
                 (p, sck) = spawn.spawn(functools.partial(spawned_wrapper, central_address, f),
                                        ctx=forkit)
                 ib.attach_socket(p.pid, sck)
                 processes[p.pid] = (p, None)
                 return p.pid
-
-            process_zero = spawn_process_internal(user_f)
 
             def add_monitor(addr,monitored_addr):
                 nonlocal next_mref
@@ -67,75 +68,104 @@ def central(res_sock, puser_f):
                 process_monitoring.append((addr, monitored_addr, mref))
                 return mref
 
-            while True:
-                x = ib.receive()
-                match x:
-                    case ("process-exit", addr, v0, v1):
-                        # todo: check the process is in the table
-                        # check it doesn't already have a first exit val
-                        processes[addr] = (processes[addr][0], (v0,v1))
-                    case ("client-disconnected", addr):
-                        pe = processes[addr]
-                        pe[0].join()
-                        process_exit_val = pe[1]
-                        if process_exit_val is None:
-                            match spawn.get_process_exitval(pe[0]):
-                                case ("process-exit", _, v0, v1):
-                                    process_exit_val = (v0,v1)
-                                case _:
-                                    print(f"bad exit val: {x}")
-                        # if process zero, exit the central services
-                        if addr == process_zero:
-                            process_zero_exit = process_exit_val
-                            break
-                        # ping all the monitoring processes
-                        for i in process_monitoring:
-                            if i[1] == addr:
-                                ib.send(i[0], ("down", i[2], i[1], process_exit_val))
-                        # clean up the process table
-                        del processes[addr]
-                        # clean up the monitoring table
-                        process_monitoring = [(p,m,r) for (p,m,r) in process_monitoring
-                                              if p != addr and m != addr]
-                    case (ret, "ping"):
-                        #print(f"cs got ping from {ret}")
-                        ib.send(ret, ("pong",))
-                    case (ret, "spawn", f):
-                        new = spawn_process_internal(f)
-                        ib.send(ret, ("spawned-ok", new))
-                    case (ret, "spawn-monitor", f):
-                        new = spawn_process_internal(f)
-                        mref = add_monitor(ret, new)
-                        ib.send(ret, ("spawned-ok", new, mref))
-                    case (from_addr, "connect-to", connect_addr):
-                        (sidea, sideb) = sck.socketpair()
-                        try:
-                            # there's a lot of things that need protection like this
-                            # in the central
-                            x = ib.send(connect_addr, ("have-a-connection", from_addr))
-                        except Exception as x:
-                            ib.send(from_addr, ("connection-error", f"send: process not found {x.addr}"))
-                        else:
-                            # todo: any of these 3 sends can fail because a process
-                            # has exited in the meantime, central should not break
-                            # when this happens, and if the calling process (from_addr)
-                            # is up, it should get notified
-                            ib.send_socket(connect_addr, sideb)
-                            ib.send(from_addr, ("have-a-connection", connect_addr))
-                            ib.send_socket(from_addr, sidea)
-                            
-                            
-                    case _:
-                        print(x)
+            process_zero_exit = None
+            try:
+                process_zero = spawn_process_internal(user_f)
+            except:
+                # how to keep this in sync with spawn?
+                process_zero_exit = ("error", (sys.exc_info()[1], "".join(traceback.format_tb(sys.exc_info()[2]))))
 
+            if process_zero_exit is None:
+                while True:
+                    x = ib.receive()
+                    match x:
+                        case ("process-exit", addr, v0, v1):
+                            # todo: check the process is in the table
+                            # check it doesn't already have a first exit val
+                            processes[addr] = (processes[addr][0], (v0,v1))
+                        case ("client-disconnected", addr):
+                            pe = processes[addr]
+                            pe[0].join()
+                            process_exit_val = pe[1]
+                            if process_exit_val is None:
+                                match spawn.get_process_exitval(pe[0]):
+                                    case ("process-exit", _, v0, v1):
+                                        process_exit_val = (v0,v1)
+                                    case _:
+                                        print(f"bad exit val: {x}")
+                            # if process zero, exit the central services
+                            if addr == process_zero:
+                                process_zero_exit = process_exit_val
+                                break
+                            # ping all the monitoring processes
+                            any_monitors = False
+                            for i in process_monitoring:
+                                if i[1] == addr:
+                                    any_monitors = True
+                                    ib.send(i[0], ("down", i[2], i[1], process_exit_val))
+                            if process_exit_val[0] == 'error' and any_monitors == False:
+                                # debug print
+                                print(f"process exited with {process_exit_val}")
+                            # clean up the process table
+                            del processes[addr]
+                            # clean up the monitoring table
+                            process_monitoring = [(p,m,r) for (p,m,r) in process_monitoring
+                                                  if p != addr and m != addr]
+                        case (ret, "ping"):
+                            ib.send(ret, ("pong",))
+                        case (ret, "spawn", f):
+                            try:
+                                new = spawn_process_internal(f)
+                                ib.send(ret, ("spawned-ok", new))
+                            except:
+                                ib.send(ret, ("spawn-error", sys.exc_info()[1]))
+                        case (ret, "spawn-monitor", f):
+                            try:
+                                new = spawn_process_internal(f)
+                                mref = add_monitor(ret, new)
+                                ib.send(ret, ("spawned-ok", new, mref))
+                            except:
+                                ib.send(ret, ("spawn-error", sys.exc_info()[1]))
+                        case (from_addr, "connect-to", connect_addr):
+                            (sidea, sideb) = sck.socketpair()
+                            try:
+                                # there's a lot of things that need protection like this
+                                # in the central
+                                x = ib.send(connect_addr, ("have-a-connection", from_addr))
+                            except Exception as x:
+                                ib.send(from_addr, ("connection-error", f"send: process not found {x.addr}"))
+                            else:
+                                # todo: any of these 3 sends can fail because a process
+                                # has exited in the meantime, central should not break
+                                # when this happens, and if the calling process (from_addr)
+                                # is up, it should get notified
+                                ib.send_socket(connect_addr, sideb)
+                                ib.send(from_addr, ("have-a-connection", connect_addr))
+                                ib.send_socket(from_addr, sidea)
+
+
+                        case _:
+                            print(x)
+
+            # kill any running processes
+            def kill_it(pid):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except:
+                    print(sys.exc_info()[1])
+            [kill_it(pid) for pid in processes.keys()]
+                            
             res_sock.send_value(process_zero_exit)
             
     except:
         #print("HERE")
-        #print(sys.exc_info()[0])
+        #print(sys.exc_info()[1])
         traceback.print_exc()
         raise
 
+    
 ##############################################################################
 
 # spawn
@@ -148,6 +178,8 @@ def spawn_fun(central_addr, ib, f):
         match x:
             case ("spawned-ok", addr):
                 return addr
+            case ("spawn-error", e):
+                raise e
     return ib.receive(match=m)
 
 def spawn_monitor(central_addr, ib, f):
@@ -156,6 +188,8 @@ def spawn_monitor(central_addr, ib, f):
         match x:
             case ("spawned-ok", addr, mref):
                 return (addr,mref)
+            case ("spawn-error", e):
+                raise e
     return ib.receive(match=m)
 
 
@@ -188,12 +222,21 @@ def run(f):
     # protext against the user code that called this having threads
     # and stuff that isn't fork friendly
     ctx = multiprocessing.get_context('spawn')
-    uf = dill.dumps(f)
-    p = ctx.Process(target=central, args=[retvalb,uf])
-    p.start()
+    p = multiprocessing_wrap.start_process(target=central, args=[retvalb,f])
     p.join()
     ret = retvala.receive_value()
-    if ret is None:
-        raise Exception("internal error: expected an exit value")
-    return ret
+    match ret:
+        case None:
+            raise Exception("internal error: expected an exit value")
+        case ("error", ("exitcode", n)):
+            raise Exception(f"occasional main process exited with exit code {n}")
+        case ("error", ("signal", nm)):
+            raise Exception(f"occasional main process exited with signal {nm}")
+        case ("error", (e, tb)):
+            s = "".join(traceback.format_exception_only(type(e), e))
+            raise Exception(s + tb)
+        case ("ok", _):
+            return ret
+        case _:
+            raise Exception(f"internal error: expected (ok,_) or (error,_), got {ret}")
 

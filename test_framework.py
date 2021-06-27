@@ -429,11 +429,6 @@ class AssertVariations():
         else:
             self.fail(f"{msg} failed predicate: {v}")
 
-def sysinfo_to_value(e):
-    return ("".join(traceback.format_exception(*e, 0)),
-            f"{type(e[0])}: {str(e[0])}",
-            traceback.extract_tb(e[2]))
-
 # remote test handle allows making test assertions from different
 # processes
 # it needs to be fixed so there's a test server listening on a tcp/ip
@@ -442,14 +437,25 @@ def sysinfo_to_value(e):
 # test case run concurrently, and not any extra processes
 # they launch, which is needed
 class RemoteTestHandle(AssertVariations):
-    def __init__(self, tid, sock):
+    def __init__(self, tid, addr):
         self.tid = tid
-        self.sock = sock
+        self.addr = addr
+        self.sock = sck.connected_socket(addr)
     def tpass(self, msg):
         self.sock.send_value(("test_assert", self.tid, msg, True, datetime.datetime.now()))
     def fail(self, msg):
         self.sock.send_value(("test_assert", self.tid, msg, False, datetime.datetime.now()))
 
+    def __getstate__(self):
+        attributes = self.__dict__.copy()
+        del attributes['sock']
+        return attributes
+
+    def __setstate__(self, state):
+        self.__dict__ = state
+        self.sock = sck.connected_socket(self.addr)
+
+        
 ##############################################################################
 
 # discover tests
@@ -503,9 +509,9 @@ class TimeoutException(Exception):
 def alarm_handler(signum, frame):
     raise TimeoutException()
     
-def testcase_worker_wrapper(tid, nm, f, status_socket, timeout=1):
+def testcase_worker_wrapper(tid, nm, f, addr, ig=None, timeout=1):
     x = None
-    h = RemoteTestHandle(tid, status_socket)
+    h = RemoteTestHandle(tid, addr)
     try:
         try:
             signal.signal(signal.SIGALRM, alarm_handler)
@@ -515,8 +521,8 @@ def testcase_worker_wrapper(tid, nm, f, status_socket, timeout=1):
         except TimeoutException:
             h.fail(f"test suite {nm} timed out after {timeout}s")
         except:
-            x = sysinfo_to_value(sys.exc_info())
-            h.fail(f"test suite {nm} failed with uncaught exception {x}")
+            x = sys.exc_info()
+            h.fail(f"test suite {nm} failed with uncaught exception {traceback.format_exception(*x)}")
     except TimeoutException:
         # double up here in case another exception is thrown
         # and we catch it in time, but then the alarm goes off
@@ -526,7 +532,7 @@ def testcase_worker_wrapper(tid, nm, f, status_socket, timeout=1):
         if x is None:
             h.fail(f"test suite {nm} timed out after {timeout}s")
     finally:
-            status_socket.send_value(("end_testcase", tid, datetime.datetime.now()))
+        h.sock.send_value(("end_testcase", tid, datetime.datetime.now()))
 
 # reads values from the sock and posts them to the queue, in a
 # background thread
@@ -541,117 +547,99 @@ def wrap_sock_in(sock, q):
     t = threading.Thread(target=post_it, args=[sock,q], daemon=True)
     t.start()
 
+# trace helper gets results on a socket
+# and writes progress report and logs to db
+def trace(con, hide_successes, rcd):
+            """
+    TODO:
+    consider logging the traces
+    and then only inserting after finishing
+    maybe also do this 'offline', e.g. on another machine
+    so you can run tests super light and then load the data
+    into a central database later
+
+    """
+            match rcd:
+                case ('start_group', gid, nm, parent_id, starttime):
+                    run_sql(con,"""
+    insert into groups(group_id, group_name, parent_group_id, start_time, open)
+    values(?, ?, ?, ?, true)""", (gid, nm, parent_id, starttime))
+                case ('end_group', gid):
+                    run_sql(con,"update groups set open = false where group_id=?", (gid,))
+                case ("start_testcase", tid, gid, nm, starttime):
+                    run_sql(con,"""
+    insert into test_cases(test_case_id, test_case_name, parent_group_id, start_time, open)
+    values (?, ?, ?, ?, true)""", (tid, nm, gid, starttime))
+                case ('end_testcase', tid, endtime):
+                    run_sql(con,"""
+    update test_cases
+    set end_time = ?, open = false
+    where test_case_id = ?""", (endtime, tid))
+                case ("test_assert", tid, msg, passed, tm):
+                    run_sql(con,"""
+    insert into test_assertions(assertion_message, test_case_id, atime, status)
+    values(?,?,?,?)""", (msg, tid, tm, passed))
+                    if not hide_successes or not passed:
+                        s = "PASS" if passed else "FAIL"
+                        print(f"  {s} {msg}")
+
+                case _:
+                    print(rcd)
+
+# quick summary at end of run, to be expanded
+def summarize(con):
+            print("-----------")
+            for r in run_sql(con,"""
+    select 'FAIL ' || test_case_name || '/' || assertion_message
+    from test_cases
+    natural inner join test_assertions
+    where not status;"""):
+                print(r[0])
+
+            for r in run_sql(con,"""
+    select * from quick_summary
+    """):
+                print(r[0])
+
         
-def do_test_run(dbfile, all_tests, glob, test_patterns, hide_successes, num_jobs):
-
-    con = connect_db(dbfile)
-    run_script(con, main_ddl)
-    
-    
-    all_tests = discover_tests(all_tests, glob, test_patterns)
-
-    def trace(con,rcd):
-        """
-TODO:
-consider logging the traces
-and then only inserting after finishing
-maybe also do this 'offline', e.g. on another machine
-so you can run tests super light and then load the data
-into a central database later
-
-"""
-        match rcd:
-            case ('start_group', gid, nm, parent_id, starttime):
-                run_sql(con,"""
-insert into groups(group_id, group_name, parent_group_id, start_time, open)
-values(?, ?, ?, ?, true)""", (gid, nm, parent_id, starttime))
-            case ('end_group', gid):
-                run_sql(con,"update groups set open = false where group_id=?", (gid,))
-            case ("start_testcase", tid, gid, nm, starttime):
-                run_sql(con,"""
-insert into test_cases(test_case_id, test_case_name, parent_group_id, start_time, open)
-values (?, ?, ?, ?, true)""", (tid, nm, gid, starttime))
-            case ('end_testcase', tid, endtime):
-                run_sql(con,"""
-update test_cases
-set end_time = ?, open = false
-where test_case_id = ?""", (endtime, tid))
-            case ("test_assert", tid, msg, passed, tm):
-                run_sql(con,"""
-insert into test_assertions(assertion_message, test_case_id, atime, status)
-values(?,?,?,?)""", (msg, tid, tm, passed))
-                if not hide_successes or not passed:
-                    s = "PASS" if passed else "FAIL"
-                    print(f"  {s} {msg}")
-                
-            case _:
-                print(rcd)
-
-
-    def summarize():
-        print("-----------")
-        for r in run_sql(con,"""
-select 'FAIL ' || test_case_name || '/' || assertion_message
-from test_cases
-natural inner join test_assertions
-where not status;"""):
-            print(r[0])
-
-        for r in run_sql(con,"""
-select * from quick_summary
-"""):
-            print(r[0])
-
-    # in queue is where all the messages coming from the test workers
-    # to this process go to be handled in the main process
-    in_queue = queue.Queue()
-
-    task_queue =  make_testcase_iterator(all_tests)
-
-    def trace_usual(t):
-        match t:
-            case ("start_group", gid, nm, parent_id):
-                trace(con, ("start_group", gid, nm, parent_id, datetime.datetime.now()))
-            case ("end_group", gid):
-                trace(con, ("end_group", gid))
-            case (TestCase(), tid, parent_id, nm, fn):
-                trace(con, ("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
-            case x:
-                print(f"launch task? {x}")        
+def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
+    with tempfile.TemporaryDirectory() as tmp:
+        # connect and load the ddl into the database
+        dbfile = os.path.join(tmp, 'occasional_test_db')
+        con = connect_db(dbfile)
+        run_script(con, main_ddl)
         
-    
-    if num_jobs == 1:
+        all_tests = discover_tests(all_tests, glob, test_patterns)
+        if len(all_tests) == 0:
+            return
 
-        # start a background thread to read the in queue
-        # this traces the messages as they come through
-        def in_queue_thread_worker():
-            con = connect_db(dbfile)
+        ttrace = functools.partial(trace,con,hide_successes)
+        # in queue is where all the messages coming from the test workers
+        # to this process go to be handled in the main process
+        in_queue = queue.Queue()
+
+        def test_server_handle(sock, _):
             while True:
-                x = in_queue.get()
-                match x:
-                    case "finish":
-                        break
-                    case x:
-                        trace(con,x)
-        in_queue_thread = threading.Thread(target=in_queue_thread_worker)
-        in_queue_thread.start()
-
+                x = sock.receive_value()
+                if x is None:
+                    break
+                in_queue.put(x)
         
-        try:
-            (res_in, t_sock) = sck.socketpair()
-            wrap_sock_in(res_in, in_queue)
-            while True:
-                t = next(task_queue)
-                trace_usual(t)
-                match t:
-                    case (TestCase(), tid, parent_id, nm, fn):
-                        testcase_worker_wrapper(t[1], t[3], t[4], t_sock)
-                
-        except StopIteration:
-            pass
-        in_queue.put("finish")
-        in_queue_thread.join()
-    else:
+        srv = sck.make_socket_server(test_server_handle, daemon=True)
+        
+        task_queue =  make_testcase_iterator(all_tests)
+
+        def trace_usual(t):
+            match t:
+                case ("start_group", gid, nm, parent_id):
+                    ttrace(("start_group", gid, nm, parent_id, datetime.datetime.now()))
+                case ("end_group", gid):
+                    ttrace(("end_group", gid))
+                case (TestCase(), tid, parent_id, nm, fn):
+                    ttrace(("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
+                case x:
+                    print(f"launch task? {x}")        
+
         num_running = 0
 
         def launch_task():
@@ -662,8 +650,7 @@ select * from quick_summary
                     trace_usual(t)
                     match t:
                         case (TestCase(), tid, parent_id, nm, fn):
-                            p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4]))
-                            wrap_sock_in(p[1], in_queue)
+                            p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
                             num_running += 1
                             return True
             except StopIteration:
@@ -675,19 +662,25 @@ select * from quick_summary
             if x is None:
                 break
 
+        # hack to make it exit when there are no tests
+        in_queue.put("finish")
+
         while True:
             x = in_queue.get()
             match x:
                 case ("end_testcase", _, _):
-                    trace(con,x)
+                    ttrace(x)
                     #print("worker finished")
                     num_running -= 1
                     if launch_task() is None and num_running == 0:
                         break
+                case "finish":
+                    if num_running == 0:
+                        break
                 case x:
-                    trace(con,x)
+                    ttrace(x)
 
-    summarize()
+        summarize(con)
         
 ##############################################################################
 
@@ -713,9 +706,7 @@ def run_main_with_args(all_tests = None):
         create_tests_file(all_tests)
         # ./test_framework.py --generate-source | python3
     else:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, 'occasional_test_db')
-            do_test_run(path, all_tests, args.glob, args.test_pattern, args.hide_successes, args.num_jobs)
+        do_test_run(all_tests, args.glob, args.test_pattern, args.hide_successes, args.num_jobs)
 
 if __name__ == "__main__":
     run_main_with_args(None)

@@ -21,7 +21,10 @@ pip3 install dill
 
 Run the tests:
 
-./test_framework.py
+./test_framework.py -j1
+
+(there is an issue running the sck module tests in parallel at the
+moment, fixing it is lower priority)
 
 Examples (TODO)
 ===============
@@ -119,11 +122,20 @@ messages are left in the queue
 
 you can send addresses in messages
 
-spawn.py
---------
+multiprocessing_wrap.py
+-----------------------
 
-Running a process, then catching when it exits and getting successful
-exit values and error information on failure
+Simple wrapper around multiprocessing to make it easy to spawn
+processes which use the multiprocessing infrastructure to pass sockets
+when forking, and use the dill library to pickle everything else.
+
+occasional.py
+-------------
+
+The main framework code. It uses the inbox, multiprocessing_wrap, sck,
+spawn, and yeshup modules. The bulk of the code is the main loop in
+the co-ordination process which handles spawn, monitor messages and
+connecting processes to each other.
 
 shared_port.py
 --------------
@@ -131,6 +143,12 @@ shared_port.py
 Running a server server, which can launch new server processes,
 clients can connect to these, using only a single listening port and
 passing open socket ends between processes
+
+spawn.py
+--------
+
+Running a process, then catching when it exits and getting successful
+exit values and error information on failure
 
 sck.py
 ------

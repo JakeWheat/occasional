@@ -148,9 +148,9 @@ def test_uncaught_exception(trp):
         case ("process-exit", _, "error", (e, st)):
             trp.assert_equal("exception class", Tedious, type(e))
             trp.assert_equal("exception value", "hi", e.msg)
-            trp.assert_equal("stacktrace class", traceback.StackSummary, type(st))
+            trp.assert_equal("stacktrace", str, type(st))
         case _:
-            trp.fail(f"expected ('error', Tedious, traceback.StackSummary), got {res}")
+            trp.fail(f"expected ('error', Tedious, str), got {res}")
 
 
 def test_error_function(trp):
@@ -161,7 +161,7 @@ def test_error_function(trp):
     match res:
         case ("process-exit", _, "error", (e, st)):
             trp.assert_equal("error exit", "wheee", e)
-            trp.assert_equal("stacktrace class", traceback.StackSummary, type(st))
+            trp.assert_equal("stacktrace", str, type(st))
         case _:
             trp.fail(f"expected ('error', 'wheee', stacktrace), got {res}")
 
