@@ -1,6 +1,6 @@
 
 import multiprocessing
-import multiprocessing_wrap
+import occ.multiprocessing_wrap as multiprocessing_wrap
 import functools
 import os
 import sys
@@ -9,10 +9,10 @@ import dill
 import signal
 import atexit
 
-import spawn as mspawn
-import inbox
-from inbox import Infinity
-import sck
+import occ.spawn as mspawn
+import occ.inbox as inbox
+from occ.inbox import Infinity
+import occ.sck as sck
 
 dill.settings['recurse'] = True
 

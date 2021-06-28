@@ -244,11 +244,11 @@ import time
 import os
 import signal
 import contextlib
-import sck
+import occ.sck as sck
 import get_proc_socket_info
-import yeshup
+import occ.yeshup as yeshup
 import traceback
-import multiprocessing_wrap
+import occ.multiprocessing_wrap as multiprocessing_wrap
 
 short_wait = 0.001
 

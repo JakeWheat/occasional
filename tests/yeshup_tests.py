@@ -72,7 +72,7 @@ import multiprocessing
 import threading
 import queue
 import signal
-import yeshup
+import occ.yeshup as yeshup
 
 def run_it(cmd):
     p = subprocess.Popen(cmd)
@@ -108,8 +108,8 @@ def test_simple_yeshup(trp):
     get_pid_queue = queue.Queue()
     
     def run_parent():
-        #print("run parent")
-        p = run_it_stdin(["./yeshup_tests.py", "launch", "basic"])
+        # __file__ refers to this file, yeshup_test.py
+        p = run_it_stdin([__file__, "launch", "basic"])
         #p.wait()
         #print("launched")
         # parse the two pids

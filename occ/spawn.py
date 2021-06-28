@@ -50,12 +50,12 @@ a single exit value for a process.
 """
 
 import multiprocessing
-import multiprocessing_wrap
+import occ.multiprocessing_wrap as multiprocessing_wrap
 import sys
 import signal
-import sck
+import occ.sck as sck
 import traceback
-import yeshup
+import occ.yeshup as yeshup
 import dill
 import os
 

@@ -23,7 +23,7 @@ the first or first two arguments are sockets
 
 import multiprocessing
 import dill
-import sck
+import occ.sck as sck
 
 def undill_wrapper0(tgtw,argsw):
     tgt = dill.loads(tgtw)

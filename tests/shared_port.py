@@ -18,9 +18,9 @@ properly
 
 """
 
-import yeshup
+import occ.yeshup as yeshup
 import multiprocessing
-import sck
+import occ.sck as sck
 import os
 import time
 import functools

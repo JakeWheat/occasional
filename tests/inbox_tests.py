@@ -1,14 +1,14 @@
 
 import multiprocessing
-import multiprocessing_wrap
+import occ.multiprocessing_wrap as multiprocessing_wrap
 import functools
 import time
 import datetime
-import yeshup
+import occ.yeshup as yeshup
 import os
 import traceback
 
-from inbox import *
+from occ.inbox import *
 
 SHORT_WAIT = 0.01
 

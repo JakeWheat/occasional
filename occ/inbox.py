@@ -50,7 +50,7 @@ when it moves to not using threads, then there will be a choice
 
 """
 
-import sck
+import occ.sck as sck
 import contextlib
 import queue
 import datetime

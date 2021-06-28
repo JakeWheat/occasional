@@ -95,10 +95,10 @@ import sqlite3
 import os
 import tempfile
 import signal
-import sck
+import occ.sck as sck
 
-import spawn
-import yeshup
+import occ.spawn as spawn
+import occ.yeshup as yeshup
 
 
 ##############################################################################
@@ -296,6 +296,7 @@ def get_modules_tests_from_glob(glob_list):
         try:
             if nm.endswith(".py"):
                 nm = nm[0:-3]
+            nm = nm.replace('/', '.')
             mod = importlib.import_module(nm)
             return get_module_test_tree(mod)
         except:
