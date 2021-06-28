@@ -4,11 +4,18 @@ Python. Not yet usable.
 Roadmap
 =======
 
-A complete local system demo with spawn, send, receive, monitor
+More examples
 
-A complete distributed demo
+Distributed version (using regular spawn, send, monitor to remote
+processes)
 
-Implement and document examples below
+Networking lib similar to gen_tcp
+
+Exe running lib focused on running all sorts of exes and pipelines,
+possibly some expect-like support too (to be able to implement
+automated tests for interactive exes)
+
+Much more robust concurrency based test framework
 
 Install
 =======
@@ -29,7 +36,38 @@ moment, fixing it is lower priority)
 Examples (TODO)
 ===============
 
-running lots of tasks in parallel
+Simple hello
+------------
+
+```
+import occasional
+from occasional import spawn, send, receive, slf
+
+def say_hello():
+    while True:
+        match receive():
+            case (frm, nm):
+                send(frm, f"hello {nm}")
+
+def f():
+    h = spawn(say_hello)
+
+    send(h, (slf(), "foo"))
+    x = receive()
+    assert(x == "hello foo")
+    print(x)
+
+    send(h, (slf(), "bar"))
+    x = receive()
+    assert(x == "hello bar")
+    print(x)
+
+if __name__ == "__main__":
+    occasional.run(f)
+```
+
+
+running tasks in parallel
 
 running "server" exes, native and non native
   restarting automatically when server exits
