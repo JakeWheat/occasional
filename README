@@ -1,5 +1,5 @@
 A demo system for running concurrent and distributed processes in
-Python. Not yet usable.
+Python. Status: pre-alpha
 
 Roadmap
 =======
@@ -28,10 +28,7 @@ pip3 install dill
 
 Run the tests:
 
-./test_framework.py -j1
-
-(there is an issue running the sck module tests in parallel at the
-moment, fixing it is lower priority)
+make test
 
 Examples (TODO)
 ===============
@@ -66,29 +63,24 @@ if __name__ == "__main__":
     occasional.run(f)
 ```
 
-running tasks in parallel
-
-running "server" exes, native and non native
-  restarting automatically when server exits
-  logging exit information, timestamps
-  monitoring
-
 Theory
 ======
 
 A concurrency/distributed framework demo based on some ideas from
-Erlang, built in Python, uses Linux processes (and not Posix threads
-or a green threads system).
+Erlang, built in Python, uses Linux processes (and not e.g. Posix
+threads or a green threads system).
 
-The most critical aspect of the design is the reliable detection of
-spawned process exit with the reason why - an arbitrary exit value if
-the process produced a result, or error info if it failed.
+The original motivation and key feature is the reliable detection of
+unexpected process exit with the reason why. It's evolved into
+something that has a lot of other Erlang-like ideas.
 
-* you spawn a new process using a Python function to run as the new
+Design goals:
+
+* you spawn a new process with a Python function to run as the new
   process with minimal boilerplate
 * you get an inbox with that process that can receive messages
 * the system uses simple message passing with native values, you pass
-  inboxes around as values which can then be sent to
+  inbox addresses around as values which can then be sent to
 * incoming messages are all multiplexed onto the same input queue so
   you don't explicitly deal with different connections
 * processes in this system are Linux processes
@@ -120,21 +112,31 @@ Architecture
 It uses Unix sockets to monitor processes. Every user process is a
 Linux process. There is a central services process started by the
 system, every process in the system has a unix socket connection to
-this process. When you start a new process, it's the central services
-process that ultimately arranges the fork (using forkserver in python
-multiprocessing atm), and this central monitors the socket to detect
-when the spawned processes exit. Connecting to other local spawned
-processes is done via this central creating a socket pair and passing
-one socket to each of the two connecting processes (the connect is
-implicit when the first message is sent).
+this process.
 
+When you start a new process, it's the central services process that
+ultimately arranges the fork, and this central monitors the socket to
+detect when the spawned processes exit.
 
+Connecting to other local spawned processes is done via this central
+services process. It creates a socket pair and passes one socket to
+the connecting process and the connectee (the connect is implicit when
+the first message is sent).
+
+set_pdeathsig(signal.SIGKILL) is used so that any process spawned
+within the system is sigkilled if the parent exits.
+
+It's designed to work nice as a interactively run, foreground and
+background process, e.g. in the foreground, stopping the main process
+will stop all the others, ctrl-c will cause the top level process to
+exit and trigger all the others to exit using pdeathsig instead of
+sending ctrl-c to all of them.
 
 Code overview
 =============
 
-XX_tests
---------
+XX_tests / test_XX
+------------------
 
 Tests for the module XX
 

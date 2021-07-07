@@ -77,6 +77,8 @@ test when the pattern doesn't match any tests
 
 
 """
+import datetime
+test_run_start_time = datetime.datetime.now()
 
 import inspect
 import types
@@ -89,11 +91,11 @@ import re
 import queue
 import multiprocessing
 import threading
-import datetime
 import sqlite3
 import os
 import tempfile
 import signal
+from multiprocessing import cpu_count
 
 import functools
 bind = functools.partial
@@ -124,6 +126,13 @@ def run_sql(dbconn, sql, args=None):
     else:
         cur.execute(sql, args)
     return cur.fetchall()
+
+def run_sql_1(dbconn, sql, args=None):
+    r = run_sql(dbconn, sql, args)
+    if len(r) == 1:
+        return r[0]
+    else:
+        raise Exception(f"run sql 1 {sql} {args} returned {len(r)} rows, expecting 1 row")
 
 ##############################################################################
 
@@ -434,19 +443,20 @@ class AssertVariations():
 
 # remote test handle allows making test assertions from different
 # processes
-# it needs to be fixed so there's a test server listening on a tcp/ip
-# port instead of the test handle getting a socket
-# at the moment it only supports the top level process for each
-# test case run concurrently, and not any extra processes
-# they launch, which is needed
 class RemoteTestHandle(AssertVariations):
     def __init__(self, tid, addr):
         self.tid = tid
         self.addr = addr
-        self.sock = sck.connected_socket(addr)
+        self.sock = sck.connected_socket(self.addr)
+        self.my_pid = os.getpid()
+    def check_connection(self):
+        if os.getpid() != self.my_pid:
+            self.sock = sck.connected_socket(self.addr)
     def tpass(self, msg):
+        self.check_connection()
         self.sock.send_value(("test_assert", self.tid, msg, True, datetime.datetime.now()))
     def fail(self, msg):
+        self.check_connection()
         self.sock.send_value(("test_assert", self.tid, msg, False, datetime.datetime.now()))
 
     def __getstate__(self):
@@ -552,57 +562,97 @@ def wrap_sock_in(sock, q):
 
 # trace helper gets results on a socket
 # and writes progress report and logs to db
+
+# todo: could definitely optimise this a lot if doing tons of little queries
+# like this becomes an issue
+def test_case_path(con, tid):
+    p = []
+    (tnm, prid) = run_sql_1(con,"select test_case_name, parent_group_id from test_cases where test_case_id=?", [tid])
+    p.insert(0,(tnm))
+    while True:
+        if prid is None:
+            break
+        (par, prid) = run_sql_1(con,"select group_name, parent_group_id from groups where group_id=?", [prid])
+        p.insert(0,par)
+    return "/".join(p)
+
 def trace(con, hide_successes, rcd):
-            """
-    TODO:
-    consider logging the traces
-    and then only inserting after finishing
-    maybe also do this 'offline', e.g. on another machine
-    so you can run tests super light and then load the data
-    into a central database later
-
     """
-            match rcd:
-                case ('start_group', gid, nm, parent_id, starttime):
-                    run_sql(con,"""
-    insert into groups(group_id, group_name, parent_group_id, start_time, open)
-    values(?, ?, ?, ?, true)""", (gid, nm, parent_id, starttime))
-                case ('end_group', gid):
-                    run_sql(con,"update groups set open = false where group_id=?", (gid,))
-                case ("start_testcase", tid, gid, nm, starttime):
-                    run_sql(con,"""
-    insert into test_cases(test_case_id, test_case_name, parent_group_id, start_time, open)
-    values (?, ?, ?, ?, true)""", (tid, nm, gid, starttime))
-                case ('end_testcase', tid, endtime):
-                    run_sql(con,"""
-    update test_cases
-    set end_time = ?, open = false
-    where test_case_id = ?""", (endtime, tid))
-                case ("test_assert", tid, msg, passed, tm):
-                    run_sql(con,"""
-    insert into test_assertions(assertion_message, test_case_id, atime, status)
-    values(?,?,?,?)""", (msg, tid, tm, passed))
-                    if not hide_successes or not passed:
-                        s = "PASS" if passed else "FAIL"
-                        print(f"  {s} {msg}")
+TODO:
+consider logging the traces
+and then only inserting after finishing
+maybe also do this 'offline', e.g. on another machine
+so you can run tests super light and then load the data
+into a central database later
 
-                case _:
-                    print(rcd)
+"""
+    match rcd:
+        case ('start_group', gid, nm, parent_id, starttime):
+            run_sql(con,"""
+insert into groups(group_id, group_name, parent_group_id, start_time, open)
+values(?, ?, ?, ?, true)""", (gid, nm, parent_id, starttime))
+        case ('end_group', gid):
+            run_sql(con,"update groups set open = false where group_id=?", (gid,))
+        case ("start_testcase", tid, gid, nm, starttime):
+            run_sql(con,"""
+insert into test_cases(test_case_id, test_case_name, parent_group_id, start_time, open)
+values (?, ?, ?, ?, true)""", (tid, nm, gid, starttime))
+        case ('end_testcase', tid, endtime):
+            run_sql(con,"""
+update test_cases
+set end_time = ?, open = false
+where test_case_id = ?""", (endtime, tid))
+        case ("test_assert", tid, msg, passed, tm):
+            run_sql(con,"""
+insert into test_assertions(assertion_message, test_case_id, atime, status)
+values(?,?,?,?)""", (msg, tid, tm, passed))
+            if passed and not hide_successes:
+                tcp = test_case_path(con, tid)
+                print(f"  PASS {tcp} {msg}")
+            elif not passed:
+                tcp = test_case_path(con, tid)
+                print(f"  FAIL {tcp} {msg}")
+        case _:
+            print(rcd)
 
 # quick summary at end of run, to be expanded
-def summarize(con):
+def summarize(con, hide_successes):
             print("-----------")
+            ctid = None
+
+            if not hide_successes:
+                for r in run_sql(con,""" 
+with failed_test_cases as (
+  select test_case_id
+  from test_cases
+  natural inner join test_assertions
+  where not status)
+select test_case_id
+from test_cases
+where test_case_id not in (select test_case_id from failed_test_cases)
+order by test_case_id
+"""):
+                    print(f"PASS {test_case_path(con, r[0])}")
+            
             for r in run_sql(con,"""
-    select 'FAIL ' || test_case_name || '/' || assertion_message
-    from test_cases
-    natural inner join test_assertions
-    where not status;"""):
-                print(r[0])
+select test_case_id, assertion_message
+from test_assertions
+natural inner join test_cases
+where not status
+order by test_case_id;"""):
+                (tid, msg) = r
+                if tid != ctid:
+                    print(f"FAIL {test_case_path(con, tid)}")
+                    ctid = tid
+                print(f"  {msg}")
+
+            print("-----------")
 
             for r in run_sql(con,"""
     select * from quick_summary
     """):
-                print(r[0])
+                et = (datetime.datetime.now() - test_run_start_time).total_seconds()
+                print(f"{r[0]} in {et:0.2f}s")
 
         
 def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
@@ -683,7 +733,7 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
                 case x:
                     ttrace(x)
 
-        summarize(con)
+        summarize(con, hide_successes)
         
 ##############################################################################
 
@@ -700,7 +750,7 @@ def run_main_with_args(all_tests = None):
     parser.add_argument("--hide-successes", action='store_true', default=False)
     parser.add_argument("--show-times", action='store_true', default=False)
     parser.add_argument("--generate-source", action='store_true', default=False)
-    parser.add_argument("--num-jobs", "-j", type=int, default=multiprocessing.cpu_count())
+    parser.add_argument("--num-jobs", "-j", type=int, default=cpu_count())
     
     args = parser.parse_args()
 
