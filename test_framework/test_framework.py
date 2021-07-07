@@ -296,14 +296,21 @@ def get_module_test_tree(mod):
         return None
     tcs = [make_test_case(tf.__name__, tf) for tf in tfs]
     x = make_test_group(mod.__name__, tcs)
+    # TODO: get the test case functions in the order they are in the
+    # source file
     return x
+
+def sort_list(l):
+    l1 = l.copy()
+    l1.sort()
+    return l1
 
 def get_modules_tests_from_glob(glob_list):
 
     files = []
     for i in glob_list:
         files = files + glob.glob(i, recursive=True)
-    files = list(set(files))
+    files = sort_list(list(set(files)))
 
     def gfs(nm):
         try:
@@ -403,7 +410,7 @@ def create_tests_file(tree):
     ls = ff(1, tree, False)
     print("from test_framework import TestGroup,TestCase")
     print("import test_framework")
-    for i in list(set(modules)):
+    for i in sort_list(list(set(modules))):
         print(f"import {i}")
     for i in lines:
         print(i)

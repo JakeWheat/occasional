@@ -1,11 +1,11 @@
 from test_framework import TestGroup,TestCase
 import test_framework
-import tests.shared_port
-import tests.sck_tests
-import tests.test_area_server
 import tests.inbox_tests
 import tests.occasional_tests
+import tests.sck_tests
+import tests.shared_port
 import tests.spawn_tests
+import tests.test_area_server
 import tests.yeshup_tests
 all_tests = \
     (TestGroup(), 'all_tests', [
@@ -28,63 +28,6 @@ all_tests = \
             (TestCase(), 'test_timeout_with_delayed_unmatching_messages', tests.inbox_tests.test_timeout_with_delayed_unmatching_messages),
             (TestCase(), 'test_timeout_with_unmatching_message', tests.inbox_tests.test_timeout_with_unmatching_message),
             (TestCase(), 'test_timeout_with_unmatching_message2', tests.inbox_tests.test_timeout_with_unmatching_message2),
-        ]),
-        (TestGroup(), 'tests.shared_port', [
-            (TestCase(), 'test_connect_list', tests.shared_port.test_connect_list),
-            (TestCase(), 'test_connect_start_list', tests.shared_port.test_connect_start_list),
-            (TestCase(), 'test_shared_port_server', tests.shared_port.test_shared_port_server),
-            (TestCase(), 'test_shared_port_server_heavy', tests.shared_port.test_shared_port_server_heavy),
-            (TestCase(), 'test_socket_passing', tests.shared_port.test_socket_passing),
-        ]),
-        (TestGroup(), 'tests.sck_tests', [
-            (TestCase(), 'test_client_close', tests.sck_tests.test_client_close),
-            (TestCase(), 'test_client_send_after_disconnect', tests.sck_tests.test_client_send_after_disconnect),
-            (TestCase(), 'test_client_sends_half_message_kill_client', tests.sck_tests.test_client_sends_half_message_kill_client),
-            (TestCase(), 'test_client_sends_half_message_kill_server', tests.sck_tests.test_client_sends_half_message_kill_server),
-            (TestCase(), 'test_client_sends_non_dill_message', tests.sck_tests.test_client_sends_non_dill_message),
-            (TestCase(), 'test_client_sigkill_disconnect', tests.sck_tests.test_client_sigkill_disconnect),
-            (TestCase(), 'test_client_trivial_connect', tests.sck_tests.test_client_trivial_connect),
-            (TestCase(), 'test_connect_send_disconnect_repeat', tests.sck_tests.test_connect_send_disconnect_repeat),
-            (TestCase(), 'test_connect_to_missing_server', tests.sck_tests.test_connect_to_missing_server),
-            (TestCase(), 'test_send_malformed_netstring_from_client', tests.sck_tests.test_send_malformed_netstring_from_client),
-            (TestCase(), 'test_send_malformed_netstring_from_server', tests.sck_tests.test_send_malformed_netstring_from_server),
-            (TestCase(), 'test_send_two', tests.sck_tests.test_send_two),
-            (TestCase(), 'test_server_close', tests.sck_tests.test_server_close),
-            (TestCase(), 'test_server_send_after_disconnect', tests.sck_tests.test_server_send_after_disconnect),
-            (TestCase(), 'test_server_sends_half_message_kill_client', tests.sck_tests.test_server_sends_half_message_kill_client),
-            (TestCase(), 'test_server_sends_half_message_kill_server', tests.sck_tests.test_server_sends_half_message_kill_server),
-            (TestCase(), 'test_server_sends_non_dill_message', tests.sck_tests.test_server_sends_non_dill_message),
-            (TestCase(), 'test_server_sigkill_disconnect', tests.sck_tests.test_server_sigkill_disconnect),
-            (TestCase(), 'test_server_trivial_connect', tests.sck_tests.test_server_trivial_connect),
-            (TestCase(), 'test_socket_accept_exit', tests.sck_tests.test_socket_accept_exit),
-            (TestCase(), 'test_split_message', tests.sck_tests.test_split_message),
-            (TestCase(), 'test_trivial_sockets', tests.sck_tests.test_trivial_sockets),
-        ]),
-        (TestGroup(), 'tests.spawn_tests', [
-            (TestCase(), 'test_error_function', tests.spawn_tests.test_error_function),
-            (TestCase(), 'test_exe_exit_0', tests.spawn_tests.test_exe_exit_0),
-            (TestCase(), 'test_exe_exit_non_zero', tests.spawn_tests.test_exe_exit_non_zero),
-            (TestCase(), 'test_exe_sigkill', tests.spawn_tests.test_exe_sigkill),
-            (TestCase(), 'test_exe_sigterm', tests.spawn_tests.test_exe_sigterm),
-            (TestCase(), 'test_exit_value_function_0', tests.spawn_tests.test_exit_value_function_0),
-            (TestCase(), 'test_exit_value_function_non_trivial', tests.spawn_tests.test_exit_value_function_non_trivial),
-            (TestCase(), 'test_leave_function', tests.spawn_tests.test_leave_function),
-            (TestCase(), 'test_linux_exit_0', tests.spawn_tests.test_linux_exit_0),
-            (TestCase(), 'test_linux_exit_non_zero', tests.spawn_tests.test_linux_exit_non_zero),
-            (TestCase(), 'test_process_key_exit_0', tests.spawn_tests.test_process_key_exit_0),
-            (TestCase(), 'test_process_key_ret', tests.spawn_tests.test_process_key_ret),
-            (TestCase(), 'test_python_exit_0', tests.spawn_tests.test_python_exit_0),
-            (TestCase(), 'test_python_exit_non_zero', tests.spawn_tests.test_python_exit_non_zero),
-            (TestCase(), 'test_return_from_function', tests.spawn_tests.test_return_from_function),
-            (TestCase(), 'test_sigkill_0', tests.spawn_tests.test_sigkill_0),
-            (TestCase(), 'test_sigterm', tests.spawn_tests.test_sigterm),
-            (TestCase(), 'test_uncaught_exception', tests.spawn_tests.test_uncaught_exception),
-        ]),
-        (TestGroup(), 'tests.yeshup_tests', [
-            (TestCase(), 'test_simple_yeshup', tests.yeshup_tests.test_simple_yeshup),
-        ]),
-        (TestGroup(), 'tests.test_area_server', [
-            (TestCase(), 'test_area_server', tests.test_area_server.test_area_server),
         ]),
         (TestGroup(), 'tests.occasional_tests', [
             (TestCase(), 'test_check_right_exit', tests.occasional_tests.test_check_right_exit),
@@ -112,6 +55,63 @@ all_tests = \
             (TestCase(), 'test_too_many_args_spawn', tests.occasional_tests.test_too_many_args_spawn),
             (TestCase(), 'test_top_level', tests.occasional_tests.test_top_level),
             (TestCase(), 'test_trivial_run', tests.occasional_tests.test_trivial_run),
+        ]),
+        (TestGroup(), 'tests.sck_tests', [
+            (TestCase(), 'test_client_close', tests.sck_tests.test_client_close),
+            (TestCase(), 'test_client_send_after_disconnect', tests.sck_tests.test_client_send_after_disconnect),
+            (TestCase(), 'test_client_sends_half_message_kill_client', tests.sck_tests.test_client_sends_half_message_kill_client),
+            (TestCase(), 'test_client_sends_half_message_kill_server', tests.sck_tests.test_client_sends_half_message_kill_server),
+            (TestCase(), 'test_client_sends_non_dill_message', tests.sck_tests.test_client_sends_non_dill_message),
+            (TestCase(), 'test_client_sigkill_disconnect', tests.sck_tests.test_client_sigkill_disconnect),
+            (TestCase(), 'test_client_trivial_connect', tests.sck_tests.test_client_trivial_connect),
+            (TestCase(), 'test_connect_send_disconnect_repeat', tests.sck_tests.test_connect_send_disconnect_repeat),
+            (TestCase(), 'test_connect_to_missing_server', tests.sck_tests.test_connect_to_missing_server),
+            (TestCase(), 'test_send_malformed_netstring_from_client', tests.sck_tests.test_send_malformed_netstring_from_client),
+            (TestCase(), 'test_send_malformed_netstring_from_server', tests.sck_tests.test_send_malformed_netstring_from_server),
+            (TestCase(), 'test_send_two', tests.sck_tests.test_send_two),
+            (TestCase(), 'test_server_close', tests.sck_tests.test_server_close),
+            (TestCase(), 'test_server_send_after_disconnect', tests.sck_tests.test_server_send_after_disconnect),
+            (TestCase(), 'test_server_sends_half_message_kill_client', tests.sck_tests.test_server_sends_half_message_kill_client),
+            (TestCase(), 'test_server_sends_half_message_kill_server', tests.sck_tests.test_server_sends_half_message_kill_server),
+            (TestCase(), 'test_server_sends_non_dill_message', tests.sck_tests.test_server_sends_non_dill_message),
+            (TestCase(), 'test_server_sigkill_disconnect', tests.sck_tests.test_server_sigkill_disconnect),
+            (TestCase(), 'test_server_trivial_connect', tests.sck_tests.test_server_trivial_connect),
+            (TestCase(), 'test_socket_accept_exit', tests.sck_tests.test_socket_accept_exit),
+            (TestCase(), 'test_split_message', tests.sck_tests.test_split_message),
+            (TestCase(), 'test_trivial_sockets', tests.sck_tests.test_trivial_sockets),
+        ]),
+        (TestGroup(), 'tests.shared_port', [
+            (TestCase(), 'test_connect_list', tests.shared_port.test_connect_list),
+            (TestCase(), 'test_connect_start_list', tests.shared_port.test_connect_start_list),
+            (TestCase(), 'test_shared_port_server', tests.shared_port.test_shared_port_server),
+            (TestCase(), 'test_shared_port_server_heavy', tests.shared_port.test_shared_port_server_heavy),
+            (TestCase(), 'test_socket_passing', tests.shared_port.test_socket_passing),
+        ]),
+        (TestGroup(), 'tests.spawn_tests', [
+            (TestCase(), 'test_error_function', tests.spawn_tests.test_error_function),
+            (TestCase(), 'test_exe_exit_0', tests.spawn_tests.test_exe_exit_0),
+            (TestCase(), 'test_exe_exit_non_zero', tests.spawn_tests.test_exe_exit_non_zero),
+            (TestCase(), 'test_exe_sigkill', tests.spawn_tests.test_exe_sigkill),
+            (TestCase(), 'test_exe_sigterm', tests.spawn_tests.test_exe_sigterm),
+            (TestCase(), 'test_exit_value_function_0', tests.spawn_tests.test_exit_value_function_0),
+            (TestCase(), 'test_exit_value_function_non_trivial', tests.spawn_tests.test_exit_value_function_non_trivial),
+            (TestCase(), 'test_leave_function', tests.spawn_tests.test_leave_function),
+            (TestCase(), 'test_linux_exit_0', tests.spawn_tests.test_linux_exit_0),
+            (TestCase(), 'test_linux_exit_non_zero', tests.spawn_tests.test_linux_exit_non_zero),
+            (TestCase(), 'test_process_key_exit_0', tests.spawn_tests.test_process_key_exit_0),
+            (TestCase(), 'test_process_key_ret', tests.spawn_tests.test_process_key_ret),
+            (TestCase(), 'test_python_exit_0', tests.spawn_tests.test_python_exit_0),
+            (TestCase(), 'test_python_exit_non_zero', tests.spawn_tests.test_python_exit_non_zero),
+            (TestCase(), 'test_return_from_function', tests.spawn_tests.test_return_from_function),
+            (TestCase(), 'test_sigkill_0', tests.spawn_tests.test_sigkill_0),
+            (TestCase(), 'test_sigterm', tests.spawn_tests.test_sigterm),
+            (TestCase(), 'test_uncaught_exception', tests.spawn_tests.test_uncaught_exception),
+        ]),
+        (TestGroup(), 'tests.test_area_server', [
+            (TestCase(), 'test_area_server', tests.test_area_server.test_area_server),
+        ]),
+        (TestGroup(), 'tests.yeshup_tests', [
+            (TestCase(), 'test_simple_yeshup', tests.yeshup_tests.test_simple_yeshup),
         ]),
     ])
 
