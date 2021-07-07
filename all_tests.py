@@ -16,7 +16,6 @@ all_tests = \
             (TestCase(), 'test_disconnect_notification', tests.inbox_tests.test_disconnect_notification),
             (TestCase(), 'test_flush_buffer', tests.inbox_tests.test_flush_buffer),
             (TestCase(), 'test_many_clients', tests.inbox_tests.test_many_clients),
-            (TestCase(), 'test_many_clients_pipelined', tests.inbox_tests.test_many_clients_pipelined),
             (TestCase(), 'test_non_listen_connection', tests.inbox_tests.test_non_listen_connection),
             (TestCase(), 'test_read_all_inbox', tests.inbox_tests.test_read_all_inbox),
             (TestCase(), 'test_selective_receive1', tests.inbox_tests.test_selective_receive1),
@@ -31,6 +30,7 @@ all_tests = \
             (TestCase(), 'test_timeout_with_delayed_unmatching_messages', tests.inbox_tests.test_timeout_with_delayed_unmatching_messages),
             (TestCase(), 'test_timeout_with_unmatching_message', tests.inbox_tests.test_timeout_with_unmatching_message),
             (TestCase(), 'test_timeout_with_unmatching_message2', tests.inbox_tests.test_timeout_with_unmatching_message2),
+            (TestCase(), 'test_xmany_clients_pipelined', tests.inbox_tests.test_xmany_clients_pipelined),
         ]),
         (TestGroup(), 'tests.occasional_tests', [
             (TestCase(), 'test_check_right_exit', tests.occasional_tests.test_check_right_exit),

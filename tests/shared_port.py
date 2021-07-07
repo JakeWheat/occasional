@@ -24,6 +24,8 @@ import occ.sck as sck
 import os
 import time
 
+from occ.utils import format_exception
+
 import sys
 import socket
 import threading
@@ -145,7 +147,7 @@ def runsubserver(sock, handle_f):
                    print(f"runsubserver unrecognised message {x}")
     except:
         print("exception in runsubserver")
-        print(sys.exc_info())
+        print(format_exception(sys.exc_info()[1]))
            
 
 def start_server():
@@ -191,7 +193,7 @@ def start_server():
                        print(f"xx unsupported message {m}")
         except:
             print("exception in main server accept handler")
-            print(sys.exc_info())
+            print(format_exception(sys.exc_info()[1]))
 
     srv = sck.make_socket_server(accept_handler, daemon=True)
     return srv.addr
@@ -230,7 +232,7 @@ def test_connect_start_list(trp):
                 sock.send_value(("hello", x))
         except:
             print("exception in my_server")
-            print(sys.exc_info())
+            print(format_exception(sys.exc_info()[1]))
 
 
     sock.send_value(("start-subserver", "srv", my_server))
@@ -293,7 +295,7 @@ def test_shared_port_server(trp):
                 sock.send_value(("hello", x))
         except:
             print("exception in my_server")
-            print(sys.exc_info())
+            print(format_exception(sys.exc_info()[1]))
 
     def my_server2(sock):
         try:
@@ -304,7 +306,7 @@ def test_shared_port_server(trp):
                 sock.send_value(("greetings", x))
         except:
             print("exception in my_server")
-            print(sys.exc_info())
+            print(format_exception(sys.exc_info()[1]))
 
     sock.send_value(("start-subserver", "srv1", my_server1))
     x = sock.receive_value()

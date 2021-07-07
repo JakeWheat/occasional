@@ -7,6 +7,7 @@ import traceback
 import dill
 import signal
 import atexit
+import logging
 
 import functools
 bind = functools.partial
@@ -15,11 +16,15 @@ import occ.spawn as mspawn
 import occ.inbox as inbox
 from occ.inbox import Infinity
 import occ.sck as sck
+import occ.yeshup as yeshup
+import occ.logging
 
 from tblib import pickling_support
 pickling_support.install()
 
 dill.settings['recurse'] = True
+
+logger = logging.getLogger(__name__)
 
 ##############################################################################
 
@@ -76,6 +81,8 @@ the local inbox
 def _central(a,b,c):
 
     try:
+        yeshup.yeshup_me()
+        occ.logging.initialize_logging()
         # work around limitation with the spawn args
         # the arg is deconstructed and reordered because
         # the spawn only allows sockets in the first arguments
@@ -105,6 +112,7 @@ def _central(a,b,c):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
                 (p, sock) = mspawn.spawn(bind(_spawned_wrapper, central_address, f),
                                          ctx=_forkit)
+                logger.info(("spawn", p.pid, str(f)))
                 ib.attach_socket(p.pid, sock, True)
                 processes[p.pid] = (p, None)
                 return p.pid
@@ -116,6 +124,8 @@ def _central(a,b,c):
                 process_monitoring.append((addr, monitored_addr, mref))
                 return mref
 
+            ##########################
+            
             process_zero_exit = None
 
             match start_val:
@@ -134,7 +144,8 @@ def _central(a,b,c):
                 case _:
                     raise Exception(f"internal error: bad start_val {start_val}")
                     
-
+            ##########################
+            
             if process_zero_exit is None:
                 while True:
                     x = ib.receive()
@@ -159,7 +170,8 @@ def _central(a,b,c):
                                         case ("process-exit", _, v0, v1):
                                             process_exit_val = (v0,v1)
                                         case _:
-                                            print(f"bad exit val: {x}")
+                                            logger.error(f"bad exit val: {x}")
+                            logger.info(("process-exit", pe[0].pid, process_exit_val))
                             # if process zero, exit the central services
                             if addr == process_zero:
                                 process_zero_exit = process_exit_val
@@ -170,9 +182,6 @@ def _central(a,b,c):
                                 if i[1] == addr:
                                     any_monitors = True
                                     ib.send(i[0], ("down", i[2], i[1], process_exit_val))
-                            if process_exit_val[0] == 'error' and any_monitors == False:
-                                # debug print
-                                print(f"process exited with {process_exit_val}")
                             # clean up the process table
                             del processes[addr]
                             # clean up the monitoring table
@@ -211,10 +220,11 @@ def _central(a,b,c):
                                 ib.send_socket(connect_addr, sideb)
                                 ib.send(from_addr, ("have-a-connection", connect_addr))
                                 ib.send_socket(from_addr, sidea)
+                                logger.info(("connection", from_addr, connect_addr))
 
 
                         case _:
-                            print(x)
+                            logger.error(f"unrecognised message sent to central: {x}")
 
             # kill any running processes
             def kill_it(pid):
@@ -223,7 +233,7 @@ def _central(a,b,c):
                 except ProcessLookupError:
                     pass
                 except:
-                    print(sys.exc_info()[1])
+                    logger.info(("kill process on exit", pid), exc_info=1)
             [kill_it(pid) for pid in processes.keys()
              if not (pid == process_zero and start_val[0] == "top-level")]
 
@@ -232,11 +242,10 @@ def _central(a,b,c):
                    res_sock.send_value(process_zero_exit)
             
     except:
-        print("central exiting with unexpected exception")
-        #print(sys.exc_info()[1])
-        traceback.print_exc()
+        logger.exception("central exiting with unexpected exception")
         raise
-
+    finally:
+        logger.info(("central_stop", os.getpid()))
     
 ##############################################################################
 
@@ -264,6 +273,9 @@ def _spawn_monitor(central_addr, ib, f):
                 raise e
     return ib.receive(match=m)
 
+######################################
+
+# wrapper for the launched processes
 
 def make_user_process_inbox(central_address, csck):
     new_ib = inbox.make_with_socket(csck, central_address, os.getpid())
@@ -278,6 +290,7 @@ def make_user_process_inbox(central_address, csck):
 # this runs in the newly launched process to set things up and launch
 # the user function
 def _spawned_wrapper(central_address, f, csck):
+    occ.logging.initialize_logging()
     new_ib = make_user_process_inbox(central_address, csck)
     return f(new_ib)
 

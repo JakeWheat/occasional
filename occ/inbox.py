@@ -58,7 +58,10 @@ import threading
 
 import functools
 bind = functools.partial
-    
+
+import logging
+logger = logging.getLogger(__name__)
+
 class Infinity:
     def __eq__(self, other):
         return isinstance(other, Infinity)
@@ -138,25 +141,32 @@ class Inbox:
     # connection handler is used for outgoing and incoming connections
     # to loop reading incoming messages on the socket
     def connection_handler(self, sock, raddr):
-        while True:
-            x = sock.receive_value()
-            match x:
-                case None:
-                    sock.close()
-                    self.remove_connection(raddr)
-                    if self.disconnect_notify:
-                        self.q.put(("client-disconnected", raddr))
-                    break
-                case ("have-a-connection", new_raddr):
-                    rsock = sock.receive_sock()
-                    self.attach_socket(new_raddr, rsock, True)
-                    if self.connection_flag == new_raddr:
+        try:
+            while True:
+                x = sock.receive_value()
+                match x:
+                    case None:
+                        sock.close()
+                        self.remove_connection(raddr)
+                        if self.disconnect_notify:
+                            self.q.put(("client-disconnected", raddr))
+                        break
+                    case ("have-a-connection", new_raddr):
+                        rsock = sock.receive_sock()
+                        self.attach_socket(new_raddr, rsock, True)
+                        if self.connection_flag == new_raddr:
+                            self.q.put(x)
+                    case ("connection-error", _):
+                        # pass back to calling thread
                         self.q.put(x)
-                case ("connection-error", _):
-                    # pass back to calling thread
-                    self.q.put(x)
-                case _:
-                    self.q.put(x)
+                    case _:
+                        self.q.put(x)
+        except:
+            # log and raise because sometimes this function is run in its own thread
+            # todo: figure out a way to only log and raise only if it's running
+            # in its own thread, otherwise don't touch the exception, no catching
+            logger.info(("connection_handler", os.getpid()), exc_info=1)
+            raise
 
     def default_connect(self, my_addr, connect_addr):
         sock = sck.connected_socket(connect_addr)
@@ -174,8 +184,7 @@ class Inbox:
             case ("hello my name is", raddr):
                 self.attach_socket(raddr, sock, False)
             case x:
-                # todo: how to handle this properly
-                print(f"got bad handshake: {x}")
+                logger.error(f"got bad handshake: {x}")
 
     def connect_using_central(self, central_addr, my_addr, connect_addr):
         self.send(central_addr, (my_addr, "connect-to", connect_addr))

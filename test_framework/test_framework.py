@@ -103,6 +103,7 @@ bind = functools.partial
 import occ.sck as sck
 import occ.spawn as spawn
 import occ.yeshup as yeshup
+from occ.utils import sort_list, format_exception
 
 from tblib import pickling_support
 pickling_support.install()
@@ -304,11 +305,6 @@ def get_module_test_tree(mod):
     # source file
     return x
 
-def sort_list(l):
-    l1 = l.copy()
-    l1.sort()
-    return l1
-
 def get_modules_tests_from_glob(glob_list):
 
     files = []
@@ -333,7 +329,7 @@ def get_modules_tests_from_glob(glob_list):
                 return ts
         except:
             nm = mod if mod is not None else nm
-            msg = "".join(traceback.format_exception(*sys.exc_info()))
+            msg = format_exception(sys.exc_info()[1])
             return make_test_group(nm, [make_test_case("load_failed",
                                                        FailTestCaseBody(msg))])
         
@@ -418,7 +414,7 @@ def create_tests_file(tree):
                 modules.append(f.__module__)
                 append_line(idt, f"(TestCase(), '{nm}', {f.__module__}.{f.__name__}){e}")
             case _:
-                print(f"unrecognised ti {ti}")
+                logger.error(f"test_framework: unrecognised ti {ti}")
 
     ls = ff(1, tree, False)
     print("from test_framework import TestGroup,TestCase,FailTestCaseBody")
@@ -526,8 +522,7 @@ def make_testcase_iterator(tree):
                 tid = new_ctr()
                 yield (TestCase(), tid, parent_id, nm, fn)
             case _:
-                print(f"no match for {tree}")
-                traceback.print_stack()  
+                logger.error(f"test_framework: no match for {tree}")
                
 
     return f(tree, None)
@@ -557,8 +552,8 @@ def testcase_worker_wrapper(tid, nm, f, addr, ig=None, timeout=1):
         except TimeoutException:
             h.fail(f"test suite {nm} timed out after {timeout}s")
         except:
-            x = sys.exc_info()
-            h.fail(f"test suite {nm} failed with uncaught exception {traceback.format_exception(*x)}")
+            x = sys.exc_info()[1]
+            h.fail(f"test suite {nm} failed with uncaught exception {format_exception(x)}")
     except TimeoutException:
         # double up here in case another exception is thrown
         # and we catch it in time, but then the alarm goes off
@@ -636,7 +631,7 @@ values(?,?,?,?)""", (msg, tid, tm, passed))
                 tcp = test_case_path(con, tid)
                 print(f"  FAIL {tcp} {msg}")
         case _:
-            print(rcd)
+            logger.error(f"test_framework: trace got {rcd}")
 
 # quick summary at end of run, to be expanded
 def summarize(con, hide_successes):
@@ -714,7 +709,7 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
                 case (TestCase(), tid, parent_id, nm, fn):
                     ttrace(("start_testcase", tid, parent_id, nm, datetime.datetime.now()))
                 case x:
-                    print(f"launch task? {x}")        
+                    logger.error(f"test_framework: {x}")
 
         num_running = 0
 

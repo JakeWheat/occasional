@@ -21,13 +21,20 @@ import sys
 import threading
 import ctypes
 import tempfile
+import os
+import logging
 
 from tblib import pickling_support
+
+logger = logging.getLogger(__name__)
 
 dill.settings['recurse'] = True
 
 AF_UNIX = socket.AF_UNIX
 AF_INET = socket.AF_INET
+
+def log_socketinf(s):
+    return (os.getpid(), id(s), s.fileno())
 
 ##############################################################################
 
@@ -103,16 +110,17 @@ class Socket:
 
     def close(self):
         if self._is_open:
+            logger.info(("close-socket",*log_socketinf(self._socket)))
             err = None
             try:
                 self._socket.shutdown(socket.SHUT_RDWR)
             except:
-                err = sys.exc_info()
+                err = sys.exc_info()[1]
             try:
                 self._socket.close()
             except:
                 if err is None:
-                    err = sys.exc_info()
+                    err = sys.exc_info()[1]
                 else:
                     # trace it or something? maybe it will never be useful?
                     pass
@@ -126,6 +134,7 @@ class Socket:
         try:
             self._is_open = True
             self._socket.connect(addr)
+            logger.info(("connect-sock",*log_socketinf(self._socket)))
         except:
             self.close()
             raise
@@ -145,6 +154,7 @@ class Socket:
             raise Exception(f"recvmsg, expected to get {socket.SCM_RIGHTS}, got {cmsg_type}")
         rs = socket.socket(fileno=int.from_bytes(cmsg_data, byteorder='little'))
         # todo: should it close the self socket if there's an exception?
+        logger.info(("receive-sock",*log_socketinf(rs)))
         return Socket(rs, True)
 
 
@@ -155,6 +165,7 @@ class Socket:
                                sock_to_send._socket.fileno() \
                                  .to_bytes(Socket.c_int_size, byteorder='little')
                                )])
+        logger.info(("send-sock",*log_socketinf(sock_to_send._socket)))
         # todo: what are you supposed to do here to release the socket
         # resources in the local process, while leaving the socket
         # connected fine in the recipient process
@@ -170,11 +181,13 @@ class Socket:
                 return None
             v = dill.loads(ns)
             return v
-        except NetstringException:
-            raise
-        except (dill.PicklingError, dill.UnpicklingError):
+        except (NetstringException, dill.PicklingError, dill.UnpicklingError):
+            logger.info(("receive_value", *log_socketinf(self._socket)), exc_info=1)
+            # slightly confused, in theory, the socket can continue with one of these
+            # errors, but it reraises anyway
             raise
         except:
+            logger.info(("receive_value", *log_socketinf(self._socket)), exc_info=1)
             self.close()
             raise
 
@@ -182,11 +195,11 @@ class Socket:
         try:
             pickled = dill.dumps(val)
             write_netstring(self._socket, pickled)
-        except NetstringException:
-            raise
-        except (dill.PicklingError, dill.UnpicklingError):
+        except (NetstringException, dill.PicklingError, dill.UnpicklingError):
+            logger.info(("send_value", *log_socketinf(self._socket)), exc_info=1)
             raise
         except:
+            logger.info(("send_value", *log_socketinf(self._socket)), exc_info=1)
             self.close()
             raise
 
@@ -229,6 +242,7 @@ class SocketServer:
             else:
                 self.listen_sock._socketbind(self.addr)
             self.listen_sock._socket.listen()
+            logger.info(("listen-sock",*log_socketinf(self.listen_sock._socket)))
         except:
             self.listen_sock.close()
             raise
@@ -238,6 +252,7 @@ class SocketServer:
             try:
                 while True:
                     (s,a) = self.listen_sock._socket.accept()
+                    logger.info(("accept-sock", *log_socketinf(s)))
                     s1 = Socket(s, True)
                     tr = threading.Thread(target=callback,
                                           args=[s1, a],
@@ -245,8 +260,8 @@ class SocketServer:
                     tr.start()
                     # todo: who joins this thread and when?
             except:
-                # todo: figure out what to do with exceptions
                 self.listen_sock.close()
+                logger.info(("acceptor-exception", *log_socketinf(self.listen_sock._socket)), exc_info=1)
         self.accept_thread = threading.Thread(target=acceptor,
                                          args=[],
                                          daemon=daemon)
@@ -256,7 +271,13 @@ class SocketServer:
         return self.listen_sock.is_open()
 
     def close(self):
+        # TODO: every time close is called, save the traceback
+        # the first one will be the one where close actually closes
+        # then if any socket operation is done on the close socket
+        # report these tracebacks also
+        # it's still a problem when os.close on the file handle was used
         if self.listen_sock is not None:
+            logger.info(("close-listen-sock",*log_socketinf(self.listen_sock._socket)))
             self.listen_sock.close()
         if self.accept_thread is not None:
             self.accept_thread.join()
@@ -270,4 +291,6 @@ def make_unix_socket_server(callback, addr=None, daemon=False):
             
 def socketpair():
     (a,b) = socket.socketpair()
+    logger.info(("create socketpair",*log_socketinf(a), *log_socketinf(b)))
+
     return (Socket(a, True), Socket(b, True))

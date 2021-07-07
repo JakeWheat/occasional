@@ -250,6 +250,8 @@ import occ.yeshup as yeshup
 import traceback
 import occ.multiprocessing_wrap as multiprocessing_wrap
 
+from occ.utils import format_exception
+
 short_wait = 0.001
 
 # todo: don't set this in a global
@@ -260,13 +262,12 @@ socket_type = sck.AF_INET
 ##############################################################################
 
 def handle_net_exception(rec_queue, sock):
-    ev = ("error", sysinfo_to_value(sys.exc_info()))
+    ev = ("error", sys.exc_info()[1])
     rec_queue.put(ev)
     try:
         sock.send_value(ev)
     except:
         pass
-        # rec_queue.put(("error", sysinfo_to_value(sys.exc_info())))
 
         
 def server_process_fn(server_receive_queue, server_send_queue):
@@ -347,7 +348,7 @@ def server_process_fn(server_receive_queue, server_send_queue):
                         try:
                             connection_sock.send_value(msg)
                         except:
-                            server_receive_queue.put(("error", sysinfo_to_value(sys.exc_info())))
+                            server_receive_queue.put(("error", sys.exc_info()[1]))
                             connection_sock.close()
                 case ("send-special", msg):
                     if not connection_open():
@@ -356,7 +357,7 @@ def server_process_fn(server_receive_queue, server_send_queue):
                         try:
                             connection_sock.send_raw(msg)
                         except:
-                            server_receive_queue.put(("error", sysinfo_to_value(sys.exc_info())))
+                            server_receive_queue.put(("error", sys.exc_info()[1]))
                             connection_sock.close()
                 case ("close",):
                     exit_listener()
@@ -472,7 +473,7 @@ def client_process_fn(client_receive_queue, client_send_queue):
                             receive_thread.start()
                             client_receive_queue.put(("connected",))
                         except:
-                            client_receive_queue.put(("error", sysinfo_to_value(sys.exc_info())))
+                            client_receive_queue.put(("error", sys.exc_info()[1]))
                             if connection_sock is not None:
                                 connection_sock.close()
                 case ("disconnect",):
@@ -490,7 +491,7 @@ def client_process_fn(client_receive_queue, client_send_queue):
                         try:
                             connection_sock.send_value(msg)
                         except:
-                            client_receive_queue.put(("error", sysinfo_to_value(sys.exc_info())))
+                            client_receive_queue.put(("error", sys.exc_info()[1]))
                             connection_sock.close()
                 case ("send-special", msg):
                     if not connection_open():
@@ -499,7 +500,7 @@ def client_process_fn(client_receive_queue, client_send_queue):
                         try:
                             connection_sock.send_raw(msg)
                         except:
-                            client_receive_queue.put(("error", sysinfo_to_value(sys.exc_info())))
+                            client_receive_queue.put(("error", sys.exc_info()[1]))
                             connection_sock.close()
                 case None:
                     break
@@ -568,17 +569,6 @@ def is_process_running(pid):
     except ProcessLookupError:
         return False
 
-def sysinfo_to_value(e):
-    return ("".join(traceback.format_exception(*e, 0)),
-            f"{type(e[0])}: {str(e[0])}",
-            traceback.extract_tb(e[2]))
-
-# ...
-def sort_list(l):
-    l1 = l.copy()
-    l1.sort()
-    return l1
-
 # todo: refactor all this better in to the module
 
 def summarize_sockets(s):
@@ -615,7 +605,7 @@ def assert_added_connection(trp, pid, snp):
 def error_contains(err, pat):
     match err:
         case ("error", y):
-            return pat in str(y)
+            return pat in format_exception(y)
         case _:
             return False
 
@@ -961,8 +951,8 @@ def test_send_malformed_netstring_from_client(trp):
 
             client_send_queue.put(("send-special", x))
 
-            check_bad_message_send(trp, client_receive_queue, "read_netstring")
-            check_bad_message_send(trp, server_receive_queue, "read_netstring")
+            check_bad_message_send(trp, client_receive_queue, "NetstringException")
+            check_bad_message_send(trp, server_receive_queue, "NetstringException")
 
             assert_removed_connection(trp, client_p.pid, cli_sck)
             assert_removed_connection(trp, server_p.pid, srv_sck)
@@ -989,8 +979,8 @@ def test_send_malformed_netstring_from_server(trp):
 
             server_send_queue.put(("send-special", x))
 
-            check_bad_message_send(trp, client_receive_queue, "read_netstring")
-            check_bad_message_send(trp, server_receive_queue, "read_netstring")
+            check_bad_message_send(trp, client_receive_queue, "NetstringException")
+            check_bad_message_send(trp, server_receive_queue, "NetstringException")
 
             assert_removed_connection(trp, client_p.pid, cli_sck)
             assert_removed_connection(trp, server_p.pid, srv_sck)
@@ -1126,7 +1116,7 @@ def test_client_sends_half_message_kill_client(trp):
         # TODO: RACE - retry
         assert_removed_connection(trp, server_p.pid, srv_sck)
 
-        check_bad_message_send(trp, server_receive_queue, "read_netstring")
+        check_bad_message_send(trp, server_receive_queue, "NetstringException")
 
 def test_client_sends_half_message_kill_server(trp):
     with connected_client_server(trp) as \
@@ -1179,7 +1169,7 @@ def test_server_sends_half_message_kill_server(trp):
 
         assert_removed_connection(trp, client_p.pid, cli_sck)
 
-        check_bad_message_send(trp, client_receive_queue, "read_netstring")
+        check_bad_message_send(trp, client_receive_queue, "NetstringException")
 
 def test_server_sends_half_message_kill_client(trp):
     with connected_client_server(trp) as \
@@ -1224,7 +1214,7 @@ def test_connect_to_missing_server(trp):
         client_send_queue.put(("connect", addr))
         
         match client_receive_queue.get():
-            case ("error", x) if ("ConnectionRefusedError" in str(x)) or ("ConnectionResetError" in str(x)):
+            case ("error", x) if type(x) is ConnectionRefusedError or type(x) is ConnectionResetError:
                 trp.tpass("client connected status")
             case x:
                 trp.fail(f"client connected status expected ConnectionRefusedError or ConnectionResetError, got {x}")

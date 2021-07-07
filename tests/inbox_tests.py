@@ -10,6 +10,8 @@ import traceback
 import functools
 bind = functools.partial
 
+from occ.utils import sort_list
+
 from occ.inbox import *
 
 SHORT_WAIT = 0.01
@@ -53,12 +55,6 @@ def read_all_inbox(ib):
             break
         ret.append(x)
     return ret
-
-# batteries included?
-def sort_list(l):
-    l1 = l.copy()
-    l1.sort()
-    return l1
 
 # remove all messages from inbox and throw away
 def flush_buffer(ib):
@@ -161,10 +157,11 @@ def test_many_clients(trp):
 
     (saddr,sp) = spawn(bind(server_process,trp))
 
-    n = 50
+    num_messages = 50
+    num_clients = 10
     clis = []
-    for i in range(0,10):
-        (_,cp) = spawn(bind(client_process, trp, saddr, f"client {i}", n))
+    for i in range(0,num_clients):
+        (_,cp) = spawn(bind(client_process, trp, saddr, f"client {i}", num_messages))
         clis.append(cp)
 
     for i in clis:
@@ -176,7 +173,7 @@ def test_many_clients(trp):
 # a client sends all messages then reads the responses
 # todo: do a test with a extra process per client to read the responses
 
-def test_many_clients_pipelined(trp):
+def test_xmany_clients_pipelined(trp):
 
     def client_process(trp, addr, nm, n, ib):
 
