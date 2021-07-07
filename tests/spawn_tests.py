@@ -33,13 +33,15 @@ import os
 import sys
 import time
 import functools
+bind = functools.partial
+
 
 # simple exits from a python function
 
 def spawn_ignore(f):
     def ignore_f(f, _):
         return f()
-    return spawn(functools.partial(ignore_f, f))
+    return spawn(bind(ignore_f, f))
         
 
 def helper_test_function(trp, msg, f, v, ex):

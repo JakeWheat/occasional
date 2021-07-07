@@ -1,9 +1,11 @@
-import functools
 import os
 import signal
 import time
 import sys
 import traceback
+
+import functools
+bind = functools.partial
 
 import occasional
 
@@ -27,7 +29,7 @@ def test_ping_cs(trp):
         ib.send(ib.central, (ib.addr, "ping"))
         x = ib.receive()
         trp.assert_equal("pong", ("pong",), x)
-    occasional.run_inbox(functools.partial(f, trp))
+    occasional.run_inbox(bind(f, trp))
 
 def test_simple_spawn(trp, mod=""):
     def g(ib):
@@ -38,7 +40,7 @@ def test_simple_spawn(trp, mod=""):
         ib.send(msp, (ib.addr, "test"))
         x = ib.receive()
         trp.assert_equal(f"{mod} spawn return", ("return", "test"), x)
-    occasional.run_inbox(functools.partial(f, trp))
+    occasional.run_inbox(bind(f, trp))
 
 # sanity check to see if it looks like running a new occasional
 # instance from an occasional process works
@@ -46,7 +48,7 @@ def test_nested_occasional(trp):
     def f(trp, ib):
         test_simple_spawn(trp, "nested")
     
-    occasional.run_inbox(functools.partial(f, trp))
+    occasional.run_inbox(bind(f, trp))
 
 def test_check_right_exit(trp):
     # start a process, then exit it, then exit the main
@@ -82,7 +84,7 @@ def test_spawn_monitor_exit_0(trp):
         x = ib.receive()
         check_down_message(trp, "spawn_monitor_exit_0",
                            ('ok', ('exitcode', 0)), x)
-    occasional.run_inbox(functools.partial(f,trp))
+    occasional.run_inbox(bind(f,trp))
 
 
 def test_spawn_monitor_sigterm(trp):
@@ -94,7 +96,7 @@ def test_spawn_monitor_sigterm(trp):
         check_down_message(trp, "spawn_monitor_sigterm",
                            ('error', ('signal', 'Terminated')), x)
         
-    occasional.run_inbox(functools.partial(f, trp))
+    occasional.run_inbox(bind(f, trp))
 
 def test_spawn_monitor_return_val(trp):
     def g(ib):
@@ -155,7 +157,7 @@ def test_monitoring_proc_exits(trp):
         # a message, then it sends a reply and exits
         # p0 gets this reply, then pings central services
         # to check it's still going
-        monitoring = ib.spawn_inbox(functools.partial(monitoring_proc, ib.addr))
+        monitoring = ib.spawn_inbox(bind(monitoring_proc, ib.addr))
         monitored_addr = ib.receive()
         ib.send(monitored_addr, ib.addr)
         match ib.receive():
@@ -216,14 +218,14 @@ def test_main_system_exit_nonzero(trp):
         os._exit(1)
     raises_satisfies(trp, "test_main_system_exit_nonzero",
                      lambda: occasional.run_inbox(f),
-                     functools.partial(exception_matches_text, "exited with exit code"))
+                     bind(exception_matches_text, "exited with exit code"))
 
 def test_main_signal(trp):
     def f(ib):
         os.kill(os.getpid(), signal.SIGTERM)
     raises_satisfies(trp, "test_main_signal",
                      lambda: occasional.run_inbox(f),
-                     functools.partial(exception_matches_text, "exited with signal"))
+                     bind(exception_matches_text, "exited with signal"))
 
     
     
@@ -231,7 +233,7 @@ def test_non_callable_main(trp):
     not_a_function = 5
     raises_satisfies(trp, "test_non_callable_main",
                      lambda: occasional.run_inbox(not_a_function),
-                     functools.partial(exception_matches_text, "is not callable"))
+                     bind(exception_matches_text, "is not callable"))
 
     
 def test_non_callable_spawn(trp):
@@ -239,23 +241,23 @@ def test_non_callable_spawn(trp):
         not_a_function = 5
         raises_satisfies(trp, "test_non_callable_spawn",
                      lambda: ib.spawn_inbox(not_a_function),
-                     functools.partial(exception_matches_text, "is not callable"))
-    occasional.run_inbox(functools.partial(f,trp))
+                     bind(exception_matches_text, "is not callable"))
+    occasional.run_inbox(bind(f,trp))
 
 def test_too_few_args_main(trp):
     def f(ib, x, y):
         pass
     raises_satisfies(trp, "test_too_few_args_main",
-                     lambda: occasional.run_inbox(functools.partial(f,1)),
-                     functools.partial(exception_matches_text,
-                                       "missing 1 required positional argument"))
+                     lambda: occasional.run_inbox(bind(f,1)),
+                     bind(exception_matches_text,
+                          "missing 1 required positional argument"))
 
 def test_too_many_args_main(trp):
     def f(ib, x, y):
         pass
     raises_satisfies(trp, "test_too_many_args_main",
-                     lambda: occasional.run_inbox(functools.partial(f,1,2,3)),
-                     functools.partial(exception_matches_text,
+                     lambda: occasional.run_inbox(bind(f,1,2,3)),
+                     bind(exception_matches_text,
                                        "takes 3 positional arguments but 4 were given"))
 
     
@@ -265,7 +267,7 @@ def test_too_many_args_spawn(trp):
         def g(x,y,ib):
             pass
 
-        ib.spawn_inbox_monitor(functools.partial(g,1,2,3))
+        ib.spawn_inbox_monitor(bind(g,1,2,3))
         x = ib.receive()
         # doesn't come through as an exception on the spawn
         # can't work out how to do this
@@ -275,7 +277,7 @@ def test_too_many_args_spawn(trp):
            case _:
                trp.tfail(f"test_too_many_args_spawn: expected ('down', _, _, ('error', ('args error', _))) but got {x}")
         
-    occasional.run_inbox(functools.partial(f,trp))
+    occasional.run_inbox(bind(f,trp))
 
 def test_error_no_monitor(trp):
     def g(ib):
@@ -330,7 +332,7 @@ def test_implicit(trp):
             print("except in user code")
             traceback.print_exc()
             raise
-    occasional.run(functools.partial(f,trp))
+    occasional.run(bind(f,trp))
 
 def test_top_level(trp):
     def g():

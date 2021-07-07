@@ -54,9 +54,10 @@ import occ.sck as sck
 import contextlib
 import queue
 import datetime
-import functools
 import threading
 
+import functools
+bind = functools.partial
     
 class Infinity:
     def __eq__(self, other):
@@ -83,7 +84,7 @@ class Inbox:
         self.lock = threading.RLock()
         self.disconnect_notify = disconnect_notify
         if connect is None:
-            self.connect = functools.partial(Inbox.default_connect, self)
+            self.connect = bind(Inbox.default_connect, self)
         else:
             self.connect = connect
         self.connection_flag = None
@@ -390,7 +391,7 @@ code
 def make_with_server(disconnect_notify=False):
     s = Inbox(disconnect_notify=disconnect_notify)
     s.srv = sck.make_socket_server(
-        functools.partial(Inbox.default_accept_handler,s),
+        bind(Inbox.default_accept_handler,s),
         daemon=True)
     s.addr = s.srv.addr
     return s

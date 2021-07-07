@@ -1,13 +1,15 @@
 
 import multiprocessing
 import occ.multiprocessing_wrap as multiprocessing_wrap
-import functools
 import os
 import sys
 import traceback
 import dill
 import signal
 import atexit
+
+import functools
+bind = functools.partial
 
 import occ.spawn as mspawn
 import occ.inbox as inbox
@@ -97,8 +99,8 @@ def _central(a,b,c):
             def spawn_process_internal(f):
                 if not callable(f):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
-                (p, sock) = mspawn.spawn(functools.partial(_spawned_wrapper, central_address, f),
-                                       ctx=_forkit)
+                (p, sock) = mspawn.spawn(bind(_spawned_wrapper, central_address, f),
+                                         ctx=_forkit)
                 ib.attach_socket(p.pid, sock)
                 processes[p.pid] = (p, None)
                 return p.pid
@@ -263,11 +265,11 @@ def _spawn_monitor(central_addr, ib, f):
 
 def make_user_process_inbox(central_address, csck):
     new_ib = inbox.make_with_socket(csck, central_address, os.getpid())
-    new_ib.connect = functools.partial(inbox.Inbox.connect_using_central,
-                                            new_ib, central_address)
+    new_ib.connect = bind(inbox.Inbox.connect_using_central,
+                          new_ib, central_address)
     new_ib.central = central_address
-    new_ib.spawn_inbox = functools.partial(_spawn_fun, central_address, new_ib)
-    new_ib.spawn_inbox_monitor = functools.partial(_spawn_monitor, central_address, new_ib)
+    new_ib.spawn_inbox = bind(_spawn_fun, central_address, new_ib)
+    new_ib.spawn_inbox_monitor = bind(_spawn_monitor, central_address, new_ib)
     return new_ib
     
 
@@ -305,7 +307,7 @@ def _global_wrapper(f, ib):
     f()
 
 def _w(f):
-    return functools.partial(_global_wrapper, f)
+    return bind(_global_wrapper, f)
 
 def spawn_inbox(f):
     return _ib().spawn_inbox(f)

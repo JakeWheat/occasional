@@ -1,12 +1,14 @@
 
 import multiprocessing
 import occ.multiprocessing_wrap as multiprocessing_wrap
-import functools
 import time
 import datetime
 import occ.yeshup as yeshup
 import os
 import traceback
+
+import functools
+bind = functools.partial
 
 from occ.inbox import *
 
@@ -38,7 +40,7 @@ def delayed_send_process(addr, msg, tm, ib):
     ib.send(addr, msg)
 
 def send_after_delay(addr, msg, tm):
-    (_, p) = spawn(functools.partial(delayed_send_process, addr, msg, tm))
+    (_, p) = spawn(bind(delayed_send_process, addr, msg, tm))
     return p
 
     
@@ -111,7 +113,7 @@ def test_send_other_process(trp):
     # so there's a chance of messages being interleaved and therefore
     # corrupted
 
-    (addr,p) = spawn(functools.partial(srv,trp))
+    (addr,p) = spawn(bind(srv,trp))
     with make_with_server() as ib:
         ib.send(addr, (ib.addr, "stuff"))
         msg = ib.receive()
@@ -157,12 +159,12 @@ def test_many_clients(trp):
                 case _:
                     trp.fail(f"expected exit or (addr,x), got {x}")
 
-    (saddr,sp) = spawn(functools.partial(server_process,trp))
+    (saddr,sp) = spawn(bind(server_process,trp))
 
     n = 50
     clis = []
     for i in range(0,10):
-        (_,cp) = spawn(functools.partial(client_process, trp, saddr, f"client {i}", n))
+        (_,cp) = spawn(bind(client_process, trp, saddr, f"client {i}", n))
         clis.append(cp)
 
     for i in clis:
@@ -219,12 +221,12 @@ def test_many_clients_pipelined(trp):
                 case _:
                     trp.fail(f"expected exit or (addr,x), got {x}")
 
-    (saddr,sp) = spawn(functools.partial(server_process,trp))
+    (saddr,sp) = spawn(bind(server_process,trp))
 
     n = 50
     clis = []
     for i in range(0,10):
-        (_,cp) = spawn(functools.partial(client_process, trp, saddr, f"rpcs {i}", n))
+        (_,cp) = spawn(bind(client_process, trp, saddr, f"rpcs {i}", n))
         clis.append(cp)
 
     for i in clis:
@@ -517,8 +519,8 @@ def test_non_listen_connection(trp):
                 try:
                     yeshup.yeshup_me()
                     new_ib = make_with_socket(csck, central_address, os.getpid())
-                    new_ib.connect = functools.partial(Inbox.connect_using_central,
-                                                       new_ib, central_address)
+                    new_ib.connect = bind(Inbox.connect_using_central,
+                                          new_ib, central_address)
                     new_ib.central = central_address
                     x = f(new_ib)
                     csck.send_value(x)

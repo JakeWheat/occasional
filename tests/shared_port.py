@@ -23,10 +23,14 @@ import multiprocessing
 import occ.sck as sck
 import os
 import time
-import functools
+
 import sys
 import socket
 import threading
+
+import functools
+bind = functools.partial
+
 
 ##############################################################################
 
@@ -168,7 +172,7 @@ def start_server():
                        # how does f have shared state if it's an accept handler
                        # and each one runs in a new thread in a different process?
                        (conna, connb) = sck.socketpair()
-                       p = spawn(functools.partial(runsubserver, connb, f))
+                       p = spawn(bind(runsubserver, connb, f))
                        subservers[nm] = (p,conna)
                        sock.send_value("subserver-started")
                    case ("stop-subserver", nm):

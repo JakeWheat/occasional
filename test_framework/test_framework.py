@@ -89,14 +89,16 @@ import re
 import queue
 import multiprocessing
 import threading
-import functools
 import datetime
 import sqlite3
 import os
 import tempfile
 import signal
-import occ.sck as sck
 
+import functools
+bind = functools.partial
+
+import occ.sck as sck
 import occ.spawn as spawn
 import occ.yeshup as yeshup
 
@@ -614,7 +616,7 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
         if len(all_tests) == 0:
             return
 
-        ttrace = functools.partial(trace,con,hide_successes)
+        ttrace = bind(trace,con,hide_successes)
         # in queue is where all the messages coming from the test workers
         # to this process go to be handled in the main process
         in_queue = queue.Queue()
@@ -651,7 +653,7 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
                     trace_usual(t)
                     match t:
                         case (TestCase(), tid, parent_id, nm, fn):
-                            p = spawn.spawn(functools.partial(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
+                            p = spawn.spawn(bind(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
                             num_running += 1
                             return True
             except StopIteration:
