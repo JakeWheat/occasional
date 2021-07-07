@@ -25,6 +25,7 @@ install Python 3.10 or later
 dependencies:
 pip3 install python-prctl
 pip3 install dill
+pip3 install tblib
 
 Run the tests:
 

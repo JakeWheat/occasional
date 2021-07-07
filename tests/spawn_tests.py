@@ -34,7 +34,7 @@ import sys
 import time
 import functools
 bind = functools.partial
-
+from tblib import pickling_support
 
 # simple exits from a python function
 
@@ -136,6 +136,7 @@ def test_exit_value_function_non_trivial(trp):
         spawn_exit("bye also")
     helper_test_function(trp, "exit value function", f, "ok", "bye also")
 
+@pickling_support.install
 class Tedious(Exception):
     def __init__(self,msg):
         self.msg = msg

@@ -16,6 +16,9 @@ import occ.inbox as inbox
 from occ.inbox import Infinity
 import occ.sck as sck
 
+from tblib import pickling_support
+pickling_support.install()
+
 dill.settings['recurse'] = True
 
 ##############################################################################
@@ -38,6 +41,7 @@ returns the result value of the initial user process
 
 _forkit = multiprocessing.get_context('forkserver')
 
+@pickling_support.install
 class _SendNotFoundException(Exception):
     def __init__(self, addr):
         self.addr = addr

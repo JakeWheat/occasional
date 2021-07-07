@@ -81,7 +81,9 @@ def run_it(cmd):
     return code
 
 def run_it_stdin(cmd):
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    e = dict(os.environ)
+    e["PYTHONPATH"]="."
+    p = subprocess.Popen(cmd, env=e, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     return p
 
 def close_stdin(p):

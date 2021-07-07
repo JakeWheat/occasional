@@ -22,6 +22,8 @@ import threading
 import ctypes
 import tempfile
 
+from tblib import pickling_support
+
 dill.settings['recurse'] = True
 
 AF_UNIX = socket.AF_UNIX
@@ -29,6 +31,7 @@ AF_INET = socket.AF_INET
 
 ##############################################################################
 
+@pickling_support.install
 class NetstringException(Exception):
     def __init__(self, msg):
         self.msg = msg

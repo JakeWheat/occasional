@@ -104,6 +104,8 @@ import occ.sck as sck
 import occ.spawn as spawn
 import occ.yeshup as yeshup
 
+from tblib import pickling_support
+pickling_support.install()
 
 ##############################################################################
 
@@ -516,6 +518,7 @@ def make_testcase_iterator(tree):
 
 # test runner that supports running each test in a separate process
 
+@pickling_support.install
 class TimeoutException(Exception):
    pass
 

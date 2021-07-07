@@ -36,8 +36,7 @@ Implementation
 
 There is a low level Linux call that the parent of a process can use
 to get the Linux process exit number or the signal that caused the
-process to exit. This is wrapped in Python and the Occasional
-implementation gets this from the multiprocessing module.
+process to exit.
 
 For other cases - Python exit value or error with value and stack trace,
 the Occasional implementation running in the user process must send this
@@ -58,11 +57,14 @@ import traceback
 import occ.yeshup as yeshup
 import dill
 import os
+from tblib import pickling_support
 
+@pickling_support.install
 class ExitValException(Exception):
     def __init__(self,val):
         self.val = val
 
+@pickling_support.install
 class ExitErrorException(Exception):
     def __init__(self,val):
         self.val = val
