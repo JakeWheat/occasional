@@ -272,10 +272,10 @@ def test_too_many_args_spawn(trp):
         # doesn't come through as an exception on the spawn
         # can't work out how to do this
         match x:
-           case ('down', _, _, ('error', (x,_))) if 'takes 3 positional arguments but 4 were given' in str(x):
+           case ('down', _, _, ('error', x)) if 'takes 3 positional arguments but 4 were given' in str(x):
                trp.tpass("test_too_many_args_spawn")
            case _:
-               trp.tfail(f"test_too_many_args_spawn: expected ('down', _, _, ('error', ('args error', _))) but got {x}")
+               trp.fail(f"test_too_many_args_spawn: expected ('down', _, _, ('error', ('args error', _))) but got {x}")
         
     occasional.run_inbox(bind(f,trp))
 
@@ -309,10 +309,14 @@ def test_sub_process_killed(trp):
     # and capture the stdout/stderr and check for messages
     trp.tpass("test_error_no_monitor")
 
-from occasional import send, receive, spawn, slf, central_addr
+from occasional import send, receive, spawn, slf, central_addr, spawn_monitor
 # something weird is happening when you write occasional.receive
 # instead of importing it. Maybe dill is doing something really
 # odd with the recursive pickling
+
+# TODO: when you use it in the way that fails, the system does not report
+# the exception at all, it gets swallowed, fix this first before fixing
+# the above bug
 
 def test_implicit(trp):
     def g():
@@ -353,3 +357,18 @@ def test_top_level(trp):
 
 # todo: test code which mixes implicit and explicit inbox
 
+# todo: test launching some subprocesses
+# then exit, make sure the subprocesses are gone
+
+# test launching a spawn monitor, the spawned process doesn't exit
+# then exit the main process
+
+def test_spawn_monitor_exit_0_impl(trp):
+    def g():
+        sys.exit(0)
+    def f(trp):
+        spawn_monitor(g)
+        x = receive()
+        check_down_message(trp, "spawn_monitor_exit_0",
+                           ('ok', ('exitcode', 0)), x)
+    occasional.run(functools.partial(f,trp))

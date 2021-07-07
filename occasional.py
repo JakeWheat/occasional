@@ -124,9 +124,7 @@ def _central(a,b,c):
                         process_zero = spawn_process_internal(user_f)
                     except:
                         # how to keep this in sync with spawn?
-                        process_zero_exit = ("error",
-                                             (sys.exc_info()[1],
-                                              "".join(traceback.format_tb(sys.exc_info()[2]))))
+                        process_zero_exit = ("error", sys.exc_info()[1])
                 case ("top-level",pid,sock):
                     # add to processes table
                     processes[pid] = (None,None)
@@ -366,9 +364,8 @@ def run_inbox(f):
             raise Exception(f"occasional main process exited with exit code {n}")
         case ("error", ("signal", nm)):
             raise Exception(f"occasional main process exited with signal {nm}")
-        case ("error", (e, tb)):
-            s = "".join(traceback.format_exception_only(type(e), e))
-            raise Exception(s + tb)
+        case ("error", e):
+            raise Exception(f"Main process exited with {e}") from e
         case ("ok", _):
             return ret
         case _:

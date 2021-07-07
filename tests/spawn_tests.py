@@ -51,7 +51,7 @@ def helper_test_function(trp, msg, f, v, ex):
         case ("process-exit", _, a, b) if v==a and ex==b:
             trp.tpass(msg)
         case _:
-            trp.fail(f"{msg}: expected {('process-exit', '_', v, e)}, got {res}")
+            trp.fail(f"{msg}: expected {('process-exit', '_', v, ex)}, got {res}")
 
 def test_leave_function(trp):
     def f():
@@ -148,10 +148,11 @@ def test_uncaught_exception(trp):
     x = spawn_ignore(f)
     res = wait_spawn(x)
     match res:
-        case ("process-exit", _, "error", (e, st)):
+        case ("process-exit", _, "error", e):
             trp.assert_equal("exception class", Tedious, type(e))
             trp.assert_equal("exception value", "hi", e.msg)
-            trp.assert_equal("stacktrace", str, type(st))
+            # no idea how to get the actual type
+            trp.assert_true("stacktrace", "traceback" in str(type(e.__traceback__)))
         case _:
             trp.fail(f"expected ('error', Tedious, str), got {res}")
 
@@ -162,9 +163,8 @@ def test_error_function(trp):
     x = spawn_ignore(f)
     res = wait_spawn(x)
     match res:
-        case ("process-exit", _, "error", (e, st)):
-            trp.assert_equal("error exit", "wheee", e)
-            trp.assert_equal("stacktrace", str, type(st))
+        case ("process-exit", _, "error", e):
+            trp.assert_equal("error exit", "wheee", e.val)
         case _:
             trp.fail(f"expected ('error', 'wheee', stacktrace), got {res}")
 

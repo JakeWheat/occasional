@@ -44,6 +44,7 @@ all_tests = \
             (TestCase(), 'test_send_to_wrong_address1', tests.occasional_tests.test_send_to_wrong_address1),
             (TestCase(), 'test_simple_spawn', tests.occasional_tests.test_simple_spawn),
             (TestCase(), 'test_spawn_monitor_exit_0', tests.occasional_tests.test_spawn_monitor_exit_0),
+            (TestCase(), 'test_spawn_monitor_exit_0_impl', tests.occasional_tests.test_spawn_monitor_exit_0_impl),
             (TestCase(), 'test_spawn_monitor_exit_delay', tests.occasional_tests.test_spawn_monitor_exit_delay),
             (TestCase(), 'test_spawn_monitor_return_val', tests.occasional_tests.test_spawn_monitor_return_val),
             (TestCase(), 'test_spawn_monitor_sigterm', tests.occasional_tests.test_spawn_monitor_sigterm),

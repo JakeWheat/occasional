@@ -60,12 +60,12 @@ import os
 from tblib import pickling_support
 
 @pickling_support.install
-class ExitValException(Exception):
+class ExitVal(Exception):
     def __init__(self,val):
         self.val = val
 
 @pickling_support.install
-class ExitErrorException(Exception):
+class ErrorExit(Exception):
     def __init__(self,val):
         self.val = val
 
@@ -79,14 +79,11 @@ def spawned_process_wrapper(client_s, f):
             p_res = ("process-exit", spawn_key, "ok", ret)
     except SystemExit:
         raise
-    except ExitValException as e:
+    except ExitVal as e:
         p_res = ("process-exit", spawn_key, "ok", e.val)
-    except ExitErrorException as e:
-        einf = sys.exc_info()
-        p_res = ("process-exit", spawn_key, "error", (e.val, "".join(traceback.format_tb(einf[2]))))
     except:
-        einf = sys.exc_info()
-        p_res = ("process-exit", spawn_key, "error", (einf[1], "".join(traceback.format_tb(einf[2]))))
+        e = sys.exc_info()[1]
+        p_res = ("process-exit", spawn_key, "error", e)
     if p_res is not None:
         client_s.send_value(p_res)
        
@@ -122,13 +119,13 @@ def spawn_exit(val):
     # not sure if this is good or bad
     # but it's a good thing when you ask something to exit, it doesn't
     # have the option of refusing
-    raise ExitValException(val)
+    raise ExitVal(val)
 
 # call in a spawned function to exit with this value
 # and a stack trace
 def spawn_error(val):
     # similar comments as above
-    raise ExitErrorException(val)
+    raise ErrorExit(val)
 
 def get_process_exitval(p):
     if p.exitcode == 0:
