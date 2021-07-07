@@ -1,4 +1,4 @@
-from test_framework import TestGroup,TestCase
+from test_framework import TestGroup,TestCase,FailTestCaseBody
 import test_framework
 import tests.inbox_tests
 import tests.occasional_tests
@@ -9,6 +9,9 @@ import tests.test_area_server
 import tests.yeshup_tests
 all_tests = \
     (TestGroup(), 'all_tests', [
+        (TestGroup(), 'tests.get_proc_socket_info', [
+            (TestCase(), "no_tests_found", FailTestCaseBody("""no tests found in tests/get_proc_socket_info.py"""))
+        ]),
         (TestGroup(), 'tests.inbox_tests', [
             (TestCase(), 'test_disconnect_notification', tests.inbox_tests.test_disconnect_notification),
             (TestCase(), 'test_flush_buffer', tests.inbox_tests.test_flush_buffer),

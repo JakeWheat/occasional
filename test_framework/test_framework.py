@@ -252,6 +252,11 @@ class TestCase:
     def __eq__(self, other):
         return isinstance(other, TestCase)
 
+# used for reporting errors loading test code
+class FailTestCaseBody:
+    def __init__(self, msg):
+        self.msg = msg
+    
 
 def make_test_group(nm, ts):
     if not type(nm) is str:
@@ -269,7 +274,7 @@ def make_test_group(nm, ts):
 def make_test_case(nm, f):
     if not type(nm) is str:
         raise Exception(f"make test case not string: {nm}")
-    if not callable(f):
+    if not callable(f) and type(f) is not FailTestCaseBody:
         raise Exception(f"make test case not callable: {f}")
     return (TestCase(), nm, f)
 
@@ -281,7 +286,6 @@ def make_test_case(nm, f):
 # function to get the tests from a module
 # first, look for the all_tests value
 # if it's missing, look for all the top level XX_test functions
-
 
 def get_module_test_tree(mod):
     try:
@@ -313,18 +317,25 @@ def get_modules_tests_from_glob(glob_list):
     files = sort_list(list(set(files)))
 
     def gfs(nm):
+        mod = None
         try:
+            nm0 = nm
             if nm.endswith(".py"):
                 nm = nm[0:-3]
             nm = nm.replace('/', '.')
             mod = importlib.import_module(nm)
-            return get_module_test_tree(mod)
+            ts = get_module_test_tree(mod)
+            if ts is None:
+                msg = f"no tests found in {nm0}"
+                return make_test_group(nm, [make_test_case("no_tests_found",
+                                                           FailTestCaseBody(msg))])
+            else:
+                return ts
         except:
-            print(sys.exc_info()[0])
-            traceback.print_exc()
-            # todo: better errors
-            # send to the monitor process or something
-            # they can be shown as warnings in verbose mode
+            nm = mod if mod is not None else nm
+            msg = "".join(traceback.format_exception(*sys.exc_info()))
+            return make_test_group(nm, [make_test_case("load_failed",
+                                                       FailTestCaseBody(msg))])
         
     ts = [gfs(nm) for nm in files]
     ts = [t for t in ts if t is not None]
@@ -401,6 +412,8 @@ def create_tests_file(tree):
                 for i in tis:
                     ff(idt + 1, i)
                 append_line(idt, f"]){e}")
+            case (TestCase(), nm, FailTestCaseBody()):
+                append_line(idt, f'(TestCase(), "{nm}", FailTestCaseBody("""{ti[2].msg}"""))')
             case (TestCase(), nm, f):
                 modules.append(f.__module__)
                 append_line(idt, f"(TestCase(), '{nm}', {f.__module__}.{f.__name__}){e}")
@@ -408,7 +421,7 @@ def create_tests_file(tree):
                 print(f"unrecognised ti {ti}")
 
     ls = ff(1, tree, False)
-    print("from test_framework import TestGroup,TestCase")
+    print("from test_framework import TestGroup,TestCase,FailTestCaseBody")
     print("import test_framework")
     for i in sort_list(list(set(modules))):
         print(f"import {i}")
@@ -712,6 +725,11 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
                     t = next(task_queue)
                     trace_usual(t)
                     match t:
+                        case (TestCase(), tid, parent_id, nm, FailTestCaseBody()):
+                            f = lambda trp: trp.fail(t[4].msg)
+                            p = spawn.spawn(bind(testcase_worker_wrapper, t[1], t[3], f, srv.addr))
+                            num_running += 1
+                            return True
                         case (TestCase(), tid, parent_id, nm, fn):
                             p = spawn.spawn(bind(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
                             num_running += 1
