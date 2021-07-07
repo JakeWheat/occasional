@@ -104,41 +104,52 @@ class Inbox:
     def __getstate__(self):
         raise Exception("send inbox.addr and not the inbox")
 
-    # set up the background thread which reads from the socket
-    # and adds to the inbox queue
-    # todo: save the threads and join them when the inbox is closed
-    # join them when the socket is closed
-    def setup_read_handler(self, sock, raddr):
-        t = threading.Thread(target=Inbox.connection_handler,
-                             args=[self, sock, raddr],
-                             daemon=True)
-        t.start()
+    def get_connection(self,nm):
+        with self.lock:
+            return self.connection_cache[nm]
+
+    def has_connection(self,nm):
+        with self.lock:
+            return nm in self.connection_cache
         
+    def remove_connection(self,nm):
+        with self.lock:
+            del self.connection_cache[nm]
 
     # attach an already connected socket
     # this means this socket can be used to send messages to
     # it's address, and it will be read from using the usual thread
-    def attach_socket(self, raddr, sock):
+    def attach_socket(self, raddr, sock, new_thread):
         with self.lock:
             self.connection_cache[raddr] = sock
-        self.setup_read_handler(sock, raddr)
+        # run receive loop in this thread or a new thread:
+        # if running in this thread, attach_socket will return
+        # when the connection is closed
+        if new_thread:
+            # todo: save the threads and join them when the inbox is closed
+            # join them when the socket is closed
+            t = threading.Thread(target=Inbox.connection_handler,
+                                 args=[self, sock, raddr],
+                                 daemon=True)
+            t.start()
+        else:
+            self.connection_handler(sock, raddr)
         
     # connection handler is used for outgoing and incoming connections
-    # to read incoming messages
+    # to loop reading incoming messages on the socket
     def connection_handler(self, sock, raddr):
         while True:
             x = sock.receive_value()
             match x:
                 case None:
                     sock.close()
-                    with self.lock:
-                        del self.connection_cache[raddr]
+                    self.remove_connection(raddr)
                     if self.disconnect_notify:
                         self.q.put(("client-disconnected", raddr))
                     break
                 case ("have-a-connection", new_raddr):
                     rsock = sock.receive_sock()
-                    self.attach_socket(new_raddr, rsock)
+                    self.attach_socket(new_raddr, rsock, True)
                     if self.connection_flag == new_raddr:
                         self.q.put(x)
                 case ("connection-error", _):
@@ -147,23 +158,10 @@ class Inbox:
                 case _:
                     self.q.put(x)
 
-            
-        
-    """
-move the accept handler here
-when it creates an outbound connection, it should start
-an accept handler on it
-the accept handle q,cc should be inbox members
-this means that all the init in make_inbox
-  moves to the ctor of this class
-the only thing left there is yield the created inbox
-and call close in the finally
-"""
-
-    def default_connect(self,my_addr, connect_addr):
+    def default_connect(self, my_addr, connect_addr):
         sock = sck.connected_socket(connect_addr)
         sock.send_value(("hello my name is", my_addr))
-        self.setup_read_handler(sock, connect_addr)
+        self.attach_socket(connect_addr, sock, True)
         return sock
 
     # used for new incoming connections made using the default
@@ -174,10 +172,7 @@ and call close in the finally
         # the handshake tells us what address it's for
         match sock.receive_value():
             case ("hello my name is", raddr):
-                with self.lock:
-                    self.connection_cache[raddr] = sock
-                # read incoming messages
-                self.connection_handler(sock, raddr)
+                self.attach_socket(raddr, sock, False)
             case x:
                 # todo: how to handle this properly
                 print(f"got bad handshake: {x}")
@@ -193,7 +188,7 @@ and call close in the finally
                 case ("connection-error", e):
                     raise Exception(e)
         self.receive(match=m)
-        sock = self.connection_cache[connect_addr]
+        sock = self.get_connection(connect_addr)
         return sock
 
     
@@ -202,29 +197,16 @@ and call close in the finally
             # self send, skip pickling and sending over a socket
             self.q.put(msg)
         else:
-            connect = False
-            with self.lock:
-                if tgt not in self.connection_cache:
-                    connect = True
-                    self.connection_flag = tgt
-            if connect == True:
-                sock = self.connect(self.addr, tgt)
-                with self.lock:
-                    self.connection_cache[tgt] = sock
+            if self.has_connection(tgt):
+                sock = self.get_connection(tgt)
             else:
-                with self.lock:
-                    sock = self.connection_cache[tgt]
-            with self.lock:
-                if self.connection_flag == tgt:
-                    self.connection_flag = None
+                self.connection_flag = tgt
+                sock = self.connect(self.addr, tgt)
+                self.connection_flag = None
             sock.send_value(msg)
 
     def send_socket(self, tgt, sendsock):
-        #assert(type(tgt) is str)
-        with self.lock:
-            if tgt not in self.connection_cache:
-                raise Exception("cannot send socket when not connected to {ib.addr}")
-            sock = self.connection_cache[tgt]
+        sock = self.get_connection(tgt)
         sock.send_sock(sendsock)
         
         
@@ -403,7 +385,7 @@ def make_with_socket(ms, nm, sladdr, disconnect_notify=False):
     #assert(type(sladdr) is str)
     s = Inbox(disconnect_notify=disconnect_notify)
     s.addr = sladdr
-    s.attach_socket(nm, ms)
+    s.attach_socket(nm, ms, True)
     return s
 
 # make an inbox with no connections and no listener

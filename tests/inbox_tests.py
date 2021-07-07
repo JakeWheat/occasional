@@ -527,7 +527,7 @@ def test_non_listen_connection(trp):
                 except:
                     traceback.print_exc()
             p = multiprocessing_wrap.start_process(target=spawned_process_wrapper, args=[remote_s, f])
-            ib.attach_socket(p.pid, local_s)
+            ib.attach_socket(p.pid, local_s, True)
             return p.pid
 
 

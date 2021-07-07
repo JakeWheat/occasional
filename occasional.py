@@ -105,7 +105,7 @@ def _central(a,b,c):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
                 (p, sock) = mspawn.spawn(bind(_spawned_wrapper, central_address, f),
                                          ctx=_forkit)
-                ib.attach_socket(p.pid, sock)
+                ib.attach_socket(p.pid, sock, True)
                 processes[p.pid] = (p, None)
                 return p.pid
 
@@ -130,7 +130,7 @@ def _central(a,b,c):
                     processes[pid] = (None,None)
                     process_zero = pid
                     # add connection to local inbox
-                    ib.attach_socket(pid, sock)
+                    ib.attach_socket(pid, sock, True)
                 case _:
                     raise Exception(f"internal error: bad start_val {start_val}")
                     
