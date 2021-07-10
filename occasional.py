@@ -81,6 +81,16 @@ def _central(a,b,c):
         yeshup.yeshup_me()
         occ.logging.initialize_logging()
         logger.info(("central_start", os.getpid()))
+        # ignore these because this is a 'background process'
+        # this process should have been spawned with these signals
+        # masked
+        # they should be inherited by processes spawned
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGQUIT, signal.SIG_IGN)
+        # it doesn't ignore stop and continue, because we do
+        # want this and spawned processes to stop and continue
+        # with a foreground app if they are being run interactively
+        
         # work around limitation with the spawn args
         # the arg is deconstructed and reordered because
         # the spawn only allows sockets in the first arguments
@@ -409,8 +419,6 @@ def get_referenced_sockets(x):
     else:
         return []
 
-
-
 ##############################################################################
 
 # implicit inbox api
@@ -507,6 +515,46 @@ def logging_process(ib):
 
 # launcher
 
+"""
+
+set up signal stuff
+want to ignore siginit and sigquit in this process
+and all the spawned processes
+so it only gets delivered to the foreground process when you run occasional
+if the foreground process decides to ignore these signals, nothing will happen to any part of the system
+if the foreground process exits when it gets these signals, because of yeshup, it should exit all the rest of the launched occasional system
+this relies on:
+yeshup
+whatever internal spawn implementation used inherits the signal handlers for these signals
+for it to work completely, any exes spawned which aren't in the system, and use another method to launch additional processes, need to make sure these signal handlers are inherited, and need to make sure they use some sort of yeshup approach or are ok leaving orphaned processes
+
+"""
+
+def _spawn_central(args):
+    """x
+avoid race conditions
+block the signals before spawning the central process
+this will then ignore the signals
+the current process will then unblock
+-> no chance of getting these signals delivered to the central process
+
+no chance of missing them in the current process (except for the usual
+duplicate signal thing if you multiples of the same signal too
+quickly?)
+
+the mask is inherited when forking
+
+    """
+    try:
+        #occ.logging.initialize_logging()
+        signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT, signal.SIGQUIT])
+        # TODO: protect against the user code that called this having threads
+        # and stuff that isn't fork friendly?
+        p = mspawn.spawn_basic(bind(_central,*args))
+        return p
+    finally:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGINT, signal.SIGQUIT])
+
 # start a new occasional instance
 # f is the starting user process
 # if it exits, the whole system exits
@@ -517,7 +565,7 @@ def logging_process(ib):
 
 def run_inbox(f):
     (retvala, retvalb) = sck.socketpair()
-    p = mspawn.spawn_basic(target=_central, args=[retvalb,"function", f])
+    p = _spawn_central([retvalb,"function", f])
     retvalb.detach_close()
     p.join()
     ret = retvala.receive_value()
@@ -557,7 +605,7 @@ check the central exits when the calling process exits for whatever reason
 
 def start():
     (loc,rem) = sck.socketpair()
-    p = mspawn.spawn_basic(target=_central, args=[rem,"top-level", os.getpid()])
+    p = _spawn_central([rem,"top-level", os.getpid()])
     rem.detach_close()
     central_address = "_central" # todo: get from central
     ib = make_user_process_inbox(central_address, loc)
