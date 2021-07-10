@@ -17,10 +17,5 @@ def reraise_with_context(ctx):
     e = sys.exc_info()[1]
     raise ContextException((str(e), ctx)) from e
 
-def sort_list(l):
-    l1 = l.copy()
-    l1.sort()
-    return l1
-
 def format_exception(e):
     return "".join(traceback.format_exception(type(e), e, e.__traceback__))

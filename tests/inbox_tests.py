@@ -10,8 +10,6 @@ import traceback
 import functools
 bind = functools.partial
 
-from occ.utils import sort_list
-
 from occ.inbox import *
 
 SHORT_WAIT = 0.01
@@ -282,7 +280,7 @@ def test_read_all_inbox(trp):
             ib.send(ib.addr, i)
         time.sleep(SHORT_WAIT)
         res = read_all_inbox(ib)
-        trp.assert_equal("read all buffer", sort_list(msgs), sort_list(res))
+        trp.assert_equal("read all buffer", sorted(msgs), sorted(res))
         time.sleep(SHORT_WAIT)
         res2 = read_all_inbox(ib)
         trp.assert_equal("read all buffer empty", [], res2)

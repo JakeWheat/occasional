@@ -371,4 +371,4 @@ def test_spawn_monitor_exit_0_impl(trp):
         x = receive()
         check_down_message(trp, "spawn_monitor_exit_0",
                            ('ok', ('exitcode', 0)), x)
-    occasional.run(functools.partial(f,trp))
+    occasional.run(bind(f,trp))
