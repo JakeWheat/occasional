@@ -47,6 +47,25 @@ def test_simple_fdinfo(trp):
     snapshot3 = list(sysquery.fdinfo(os.getpid()))
     trp.assert_equal("after file closed", snapshot, snapshot3)
 
+def test_process_name(trp):
+    # also tests we get a nice process name for the test case
+    # and for spawned processes
+
+    # todo: temporarily broken, will be fixed when test framework is refactored
+    # to use occasional
+    #trp.assert_true("test case name", "test_process_name" in sysquery.process_name(os.getpid()))
+    #trp.assert_true("test case name", "test_process_name" in sysquery.process_name(0))
+
+    def my_spawned_process(trp):
+        trp.assert_true("my_spawned_process name", "my_spawned_process" in sysquery.process_name(0))
+        time.sleep(1)
+
+    def my_toplevel_process(trp):
+        trp.assert_true("my_toplevel_process name", "my_toplevel_process" in sysquery.process_name(0))
+        x = occasional.spawn(bind(my_spawned_process, trp))
+
+    occasional.run(bind(my_toplevel_process,trp))
+
 def test_processes_in_group(trp):
     snapshot = list(sysquery.pids_in_group(0))
     x = list(sysquery.pids_in_group(os.getpgid(0)))

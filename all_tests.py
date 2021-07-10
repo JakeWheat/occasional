@@ -107,6 +107,7 @@ all_tests = \
         ]),
         (TestGroup(), 'tests.test_sysquery', [
             (TestCase(), 'test_simple_fdinfo', tests.test_sysquery.test_simple_fdinfo),
+            (TestCase(), 'test_process_name', tests.test_sysquery.test_process_name),
             (TestCase(), 'test_processes_in_group', tests.test_sysquery.test_processes_in_group),
         ]),
         (TestGroup(), 'tests.yeshup_tests', [

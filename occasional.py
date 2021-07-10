@@ -6,6 +6,8 @@ import dill
 import signal
 import atexit
 import logging
+import setproctitle
+import types
 
 import functools
 bind = functools.partial
@@ -81,6 +83,7 @@ def _central(a,b,c):
         yeshup.yeshup_me()
         occ.logging.initialize_logging()
         logger.info(("central_start", os.getpid()))
+        setproctitle.setproctitle(f"python3 spawn {get_name(_central)}")
         # ignore these because this is a 'background process'
         # this process should have been spawned with these signals
         # masked
@@ -149,7 +152,7 @@ def _central(a,b,c):
                 if not callable(f):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
                 (p, sock) = mspawn.spawn_with_socket(bind(_spawned_wrapper, central_address, f))
-                logger.info(("spawn", p.pid, str(f)))
+                logger.info(("spawn", p.pid, get_name_from_f(f)))
                 ib.attach_socket(p.pid, sock, [], True)
                 processes[p.pid] = (p, None)
                 return p.pid
@@ -358,6 +361,7 @@ def make_user_process_inbox(central_address, csck):
 # the user function
 def _spawned_wrapper(central_address, f, csck):
     occ.logging.initialize_logging()
+    setproctitle.setproctitle(f"python3 spawn {get_name(f)}")
     new_ib = make_user_process_inbox(central_address, csck)
     new_ib.make_connection("_logging")
     occ.logging.set_logging_inbox(new_ib)
@@ -369,6 +373,66 @@ def _spawned_wrapper(central_address, f, csck):
     _close_extra_filehandles(scks)
 
     return f(new_ib)
+
+#####################################
+
+"""
+function to get a good process name for a spawned process
+
+this code uses a lot of functools.partial
+strategy is:
+if the f is a function, return the function name
+  it's good style in this code to launch a process by using functools.partial
+    instead of passing an args
+    -> make this mandatory
+if f is a functools.partial, then iterate through the args
+  if an args is a function not in the black list, choose that
+  if args is a partial, recurse into its args
+  otherwise skip it
+if nothing is found, use the str(f)
+
+the blacklist is:
+spawned_process_wrapper
+_spawned_wrapper
+_global_wrapper
+testcase_worker_wrapper
+
+not sure how to maintain this blacklist well ...
+
+
+"""
+blacklist = ["spawned_process_wrapper",
+             "_spawned_wrapper",
+             "_global_wrapper",
+             "testcase_worker_wrapper",
+             "wrap_f",
+             "ignore_f"]
+
+def get_name_from_f(f):
+    if isinstance(f, functools.partial):
+        x = get_name_from_f(f.func)
+        if x is not None:
+            return x
+        for i in f.args:
+            x = get_name_from_f(i)
+            if x is not None:
+                return x
+    elif type(f) == types.FunctionType:
+        if f.__name__ not in blacklist:
+            return f"{f.__module__}.{f.__name__} {f.__code__.co_filename}:{f.__code__.co_firstlineno}"
+        else:
+            pass
+    else:
+        #print(type(f))
+        return None
+
+def get_name(f):
+    x = get_name_from_f(f)
+    if x is None:
+        return str(f)
+    else:
+        return x
+
 
 #####################################
 

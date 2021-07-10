@@ -26,6 +26,7 @@ dependencies:
 pip3 install python-prctl
 pip3 install dill
 pip3 install tblib
+pip3 install setproctitle
 pip3 install duckdb (used only in the tests at the moment)
 
 Run the tests:
