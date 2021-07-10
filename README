@@ -26,6 +26,7 @@ dependencies:
 pip3 install python-prctl
 pip3 install dill
 pip3 install tblib
+pip3 install duckdb (used only in the tests at the moment)
 
 Run the tests:
 
@@ -136,16 +137,16 @@ sending ctrl-c to all of them.
 Code overview
 =============
 
-XX_tests / test_XX
-------------------
+occasional.py
+-------------
 
-Tests for the module XX
+The main framework code. The bulk of the code is the main loop in the
+co-ordination process which handles spawn, monitor messages and
+connecting processes to each other.
 
-get_proc_socket_info.py
------------------------
-
-code to read /proc to see what socket connections the kernel reports
-for processes
+The support modules for occasional.py are in occ/. There are examples
+in examples/. The tests are in tests/, and these use a test framework
+in test_framework/test_framework.py.
 
 inbox.py
 --------
@@ -162,6 +163,11 @@ messages are left in the queue
 
 you can send addresses in messages
 
+logging.py
+----------
+
+Some support code for using Python logging in this system.
+
 multiprocessing_wrap.py
 -----------------------
 
@@ -169,20 +175,12 @@ Simple wrapper around multiprocessing to make it easy to spawn
 processes which use the multiprocessing infrastructure to pass sockets
 when forking, and use the dill library to pickle everything else.
 
-occasional.py
--------------
 
-The main framework code. It uses the inbox, multiprocessing_wrap, sck,
-spawn, and yeshup modules. The bulk of the code is the main loop in
-the co-ordination process which handles spawn, monitor messages and
-connecting processes to each other.
+sck.py
+------
 
-shared_port.py
---------------
-
-Running a server server, which can launch new server processes,
-clients can connect to these, using only a single listening port and
-passing open socket ends between processes
+Wrapper code around the low level sockets api adding safety and some
+higher level features
 
 spawn.py
 --------
@@ -190,11 +188,20 @@ spawn.py
 Running a process, then catching when it exits and getting successful
 exit values and error information on failure
 
-sck.py
-------
+sysquery.py
+-----------
 
-Wrapper code around the low level sockets api adding safety and some
-higher level features
+Code to read system information (mainly from /proc) and run sql
+queries on it (it doesn't support much data to query).
+
+
+utils.py
+
+yeshup.py
+---------
+
+Simple code to implement a child process always exiting when the
+parent exits
 
 test_framework.py
 -----------------
@@ -205,9 +212,3 @@ test frameworks which met these requirements:
 * test cases are flexible/ first class (maybe some have this, didn't
   find any info in any docs I looked at)
 * ability to do test assertions concurrently in multiple processes
-
-yeshup.py
----------
-
-Simple code to implement a child process always exiting when the
-parent exits

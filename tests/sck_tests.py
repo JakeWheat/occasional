@@ -4,6 +4,17 @@
 
 Tests todo
 
+
+The testing code is full of race conditions from concurrency of
+operations that go through the kernel: e.g. waiting for a socket to
+fail with an error after killing the process on the other end of the
+socket.
+
+Not sure if it's the best way, but there is already a dubious race
+compensation thing which will check if something is true, if it isn't,
+sleep for a short while and check again, and keep trying a few times
+and then fail. Definitely want the timeout mechanism.
+
 large netstring split success and errors
   -> try with 1MB
 test sending super large netstrings and then the other side fails
@@ -245,12 +256,12 @@ import os
 import signal
 import contextlib
 import occ.sck as sck
-import get_proc_socket_info
 import occ.yeshup as yeshup
 import traceback
 import occ.multiprocessing_wrap as multiprocessing_wrap
 
 from occ.utils import format_exception
+import occ.sysquery as sysquery
 
 short_wait = 0.001
 
@@ -370,8 +381,11 @@ def server_process_fn(server_receive_queue, server_send_queue):
         # if there's an exception at this point, put it on the server receive queue
         exit_listener()
         server_receive_queue.put(("closed",))
+        
     except:
         traceback.print_exc()
+    finally:
+        pass #print("server exiting")        
 
 multiprocessing_spawn = 'forkserver'
 
@@ -569,39 +583,13 @@ def is_process_running(pid):
     except ProcessLookupError:
         return False
 
-# todo: refactor all this better in to the module
-
-def summarize_sockets(s):
-    ret = []
-    for i in s:
-        ret.append(i['type'])
-    return ret
-
-def get_sockets(pid):
-    x = summarize_sockets(get_proc_socket_info.get_socket_info(pid))
-    # hack to remove the connection for the test framework
-    return x
-
 def subtract_list(a, b):
     aa = a.copy()
     for e in b:
         aa.remove(e)
     return aa
 
-def assert_sockets_change(trp, msg, snapshot, got, add=[], remove=[]):
-    expected = subtract_list(snapshot, remove) + add
-    trp.assert_equal(msg, expected, got)
-
-def assert_removed_connection(trp, pid, snp):
-    assert_sockets_change(trp, "sockets", snp, get_sockets(pid), remove=['connection'])
-
-def assert_removed_listen(trp, pid, snp):
-    assert_sockets_change(trp, "sockets", snp, get_sockets(pid), remove=['listen'])
-
     
-def assert_added_connection(trp, pid, snp):
-    assert_sockets_change(trp, "sockets", snp, get_sockets(pid), add=['connection'])
-
 def error_contains(err, pat):
     match err:
         case ("error", y):
@@ -625,8 +613,55 @@ def is_process_exited_race(pid):
         else:
             time.sleep(short_wait)
     return False
-    
+
+def func_name(): 
+    return sys._getframe(1).f_code.co_name
+
+#####
+
+# checking sockets using proc
+
+class SocketChecker:
+    def __init__(self, trp, pid, msg):
+        self.trp = trp
+        self.pid = pid
+        self.msg = msg
+        self.starting_sockets = list(sysquery.socket_stuff(self.pid))
+    def assert_added(self, add):
+        exp = sorted(self.starting_sockets + add)
+        got = sorted(sysquery.socket_stuff(self.pid))
+        self.trp.assert_equal(self.msg, exp, got)
+
+    # I think this is only needed when you are checking right after
+    # there are less sockets than a moment ago, it takes some time
+    # for the /proc to catch up. Maybe this only happens when the
+    # socket changes are happening in another process? Not sure
+    # how it can get out of sync if the flow is barrier'd
+    def assert_added_race(self, add):
+        for i in range(0,5):
+            exp = sorted(self.starting_sockets + add)
+            got = sorted(sysquery.socket_stuff(self.pid))
+            if exp == got:
+                self.trp.assert_equal(self.msg, exp, got)
+                return
+            time.sleep(short_wait)
+        self.trp.assert_equal(self.msg, exp, got)
+
+    def assert_removed(self, remove):
+        for i in range(0,5):
+            exp = sorted(subtract_list(self.starting_sockets, remove))
+            got = sorted(sysquery.socket_stuff(self.pid))
+            if exp == got:
+                self.trp.assert_equal(self.msg, exp, got)
+                return
+            time.sleep(short_wait)
+        self.trp.assert_equal(self.msg, exp, got)
+
         
+def snapshot_sockets(trp, pid, msg):
+    return SocketChecker(trp, pid, msg)
+            
+
 ##############################################################################
 
 # test some simple sockets stuff
@@ -637,9 +672,13 @@ def test_trivial_sockets(trp):
         v = s.receive_value()
         s.send_value(("got", v))
         v = s.receive_value()
-    
+
+    starting_sockets = snapshot_sockets(trp, os.getpid(), f"{func_name()} sockets")
+
     # create a server
     srv = sck.make_socket_server(my_server_callback, daemon=True)
+
+    starting_sockets.assert_added([('tcp','listening')])
 
     if True:
         # connect with a client
@@ -651,10 +690,15 @@ def test_trivial_sockets(trp):
         r = c.receive_value()
         trp.assert_equal("server client exchange", ("got", ("hello", True)), r)
 
-        #print(f"client got {r}")
+        starting_sockets.assert_added([('tcp','listening'),
+                                       ('tcp','connected'),
+                                       ('tcp','connected'),])
 
         # close the client connection
         c.close()
+
+    starting_sockets.assert_added_race([('tcp','listening')])
+
     # close the server
     srv.close()
     # check no exceptions
@@ -706,8 +750,7 @@ def test_server_trivial_connect(trp):
     # check the status
     addr = start_server_listening(server_receive_queue, server_send_queue)
 
-    srv_sck = get_sockets(server_p.pid)
-
+    srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} sockets")
 
     # connect to the port
     # check the status message
@@ -716,12 +759,12 @@ def test_server_trivial_connect(trp):
     with socket.socket(family=socket_type) as sock:
         sock.connect(addr)
         trp.assert_equal("check connected status", ("client-connected",), server_receive_queue.get())
-        assert_added_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_added([('tcp', 'connected')])
 
     # disconnect
     # check the status message
     trp.assert_equal("check disconnected status", ("disconnected",), server_receive_queue.get())
-    trp.assert_equal("sockets", srv_sck, get_sockets(server_p.pid))
+    srv_sck.assert_added_race([])
 
     # ask the server to stop listening
     # check the status
@@ -729,7 +772,7 @@ def test_server_trivial_connect(trp):
 
     server_send_queue.put(("unlisten",))
     trp.assert_equal("unlistening status", ("unlistening",), server_receive_queue.get()) 
-    assert_removed_listen(trp, server_p.pid, srv_sck)
+    srv_sck.assert_removed([('tcp', 'listening')])
 
     server_send_queue.put(("close",))
     # close the server, check the status return
@@ -759,8 +802,8 @@ def test_client_trivial_connect(trp):
     (client_p, client_receive_queue, client_send_queue) = run_client()
     trp.assert_true("check client pid running", is_process_running(client_p.pid))
 
-    srv_sck = get_sockets(server_p.pid)
-    cli_sck = get_sockets(client_p.pid)
+    srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+    cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
     # connect the client
     # check the status
@@ -770,8 +813,8 @@ def test_client_trivial_connect(trp):
 
     trp.assert_equal("server registers connect", ("client-connected",), server_receive_queue.get())
 
-    assert_added_connection(trp, server_p.pid, srv_sck)
-    assert_added_connection(trp, client_p.pid, cli_sck)
+    srv_sck.assert_added([('tcp', 'connected')])
+    cli_sck.assert_added([('tcp', 'connected')])
 
 
     # send a message
@@ -790,11 +833,11 @@ def test_client_trivial_connect(trp):
     client_send_queue.put(("disconnect",))
     trp.assert_equal("client disconnected status", (("disconnected",)), client_receive_queue.get())
 
-    trp.assert_equal("sockets", cli_sck, get_sockets(client_p.pid))
+    cli_sck.assert_added_race([])
 
     trp.assert_equal("server registers disconnect", ("disconnected",), server_receive_queue.get())
 
-    trp.assert_equal("sockets", srv_sck, get_sockets(server_p.pid))
+    srv_sck.assert_added_race([])
     
     # close the client
     client_send_queue.put(("close",))
@@ -882,12 +925,12 @@ def test_server_close(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
         
         server_send_queue.put(("close",))
         server_p.join()
         trp.assert_equal("client disconnected status", (("disconnected",)), client_receive_queue.get())
-        assert_removed_connection(trp, client_p.pid, cli_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
 
 
 def test_client_close(trp):
@@ -898,11 +941,12 @@ def test_client_close(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+
         client_send_queue.put(("close",))
         client_p.join()
         trp.assert_equal("server registers client closed disconnect", ("disconnected",), server_receive_queue.get())
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_removed([('tcp', 'connected')])
     
 
 def test_server_send_after_disconnect(trp):
@@ -910,7 +954,7 @@ def test_server_send_after_disconnect(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
         client_send_queue.put(("close",))
         client_p.join()
         server_send_queue.put(("send", "hello"))
@@ -918,14 +962,14 @@ def test_server_send_after_disconnect(trp):
         trp.assert_equal("server registers client closed disconnect", ("disconnected",), server_receive_queue.get())
         trp.assert_equal("server gives error when send after client disconnects", ("error","not-connected",), server_receive_queue.get())
 
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_removed([('tcp', 'connected')])
 
 def test_client_send_after_disconnect(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
         server_send_queue.put(("close",))
         server_p.join()
         client_send_queue.put(("send", "hello"))
@@ -933,7 +977,7 @@ def test_client_send_after_disconnect(trp):
         trp.assert_equal("client registers server disconnect", ('disconnected',), client_receive_queue.get())
         trp.assert_equal("client gives error sending after server disconnect", ('error', 'not-connected'), client_receive_queue.get())
 
-        assert_removed_connection(trp, client_p.pid, cli_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
 
 
 def test_send_malformed_netstring_from_client(trp):
@@ -946,16 +990,16 @@ def test_send_malformed_netstring_from_client(trp):
             client_send_queue.put(("connect", addr))
             trp.assert_equal("client connected status", (("connected",)), client_receive_queue.get())
             trp.assert_equal("server registers connect", ("client-connected",), server_receive_queue.get())
-            cli_sck = get_sockets(client_p.pid)
-            srv_sck = get_sockets(server_p.pid)
+            srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+            cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
             client_send_queue.put(("send-special", x))
 
-            check_bad_message_send(trp, client_receive_queue, "NetstringException")
-            check_bad_message_send(trp, server_receive_queue, "NetstringException")
+            check_bad_message_send(trp, client_receive_queue, "read_netstring")
+            check_bad_message_send(trp, server_receive_queue, "read_netstring")
 
-            assert_removed_connection(trp, client_p.pid, cli_sck)
-            assert_removed_connection(trp, server_p.pid, srv_sck)
+            cli_sck.assert_removed([('tcp', 'connected')])
+            srv_sck.assert_removed([('tcp', 'connected')])
 
         # doesn't start with digits
         test_bad_netstring(bytes("hello", "ascii"))
@@ -974,16 +1018,16 @@ def test_send_malformed_netstring_from_server(trp):
             client_send_queue.put(("connect", addr))
             trp.assert_equal("client connected status", (("connected",)), client_receive_queue.get())
             trp.assert_equal("server registers connect", ("client-connected",), server_receive_queue.get())
-            cli_sck = get_sockets(client_p.pid)
-            srv_sck = get_sockets(server_p.pid)
+            srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+            cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
             server_send_queue.put(("send-special", x))
 
-            check_bad_message_send(trp, client_receive_queue, "NetstringException")
-            check_bad_message_send(trp, server_receive_queue, "NetstringException")
+            check_bad_message_send(trp, client_receive_queue, "read_netstring")
+            check_bad_message_send(trp, server_receive_queue, "read_netstring")
 
-            assert_removed_connection(trp, client_p.pid, cli_sck)
-            assert_removed_connection(trp, server_p.pid, srv_sck)
+            cli_sck.assert_removed([('tcp', 'connected')])
+            srv_sck.assert_removed([('tcp', 'connected')])
 
         test_bad_netstring(bytes("hello", "ascii"))
         test_bad_netstring(bytes("5", "ascii") + bytes("hello", "ascii") + bytes(",", "ascii"))
@@ -995,8 +1039,8 @@ def test_client_sends_non_dill_message(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
         
         msg = "hello"
         x = bytes(str(len(msg)), 'ascii') + bytes(':', 'ascii') + \
@@ -1006,16 +1050,16 @@ def test_client_sends_non_dill_message(trp):
         check_bad_message_send(trp, client_receive_queue, "UnpicklingError")
         check_bad_message_send(trp, server_receive_queue, "UnpicklingError")
         
-        assert_removed_connection(trp, client_p.pid, cli_sck)
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
+        srv_sck.assert_removed([('tcp', 'connected')])
 
 def test_server_sends_non_dill_message(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
         msg = "hello"
         x = bytes(str(len(msg)), 'ascii') + bytes(':', 'ascii') + \
@@ -1025,8 +1069,8 @@ def test_server_sends_non_dill_message(trp):
         check_bad_message_send(trp, client_receive_queue, "UnpicklingError")
         check_bad_message_send(trp, server_receive_queue, "UnpicklingError")
         
-        assert_removed_connection(trp, client_p.pid, cli_sck)
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
+        srv_sck.assert_removed([('tcp', 'connected')])
 
     
 def test_server_sigkill_disconnect(trp):
@@ -1037,7 +1081,7 @@ def test_server_sigkill_disconnect(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
 
         os.kill(client_p.pid, signal.SIGKILL)
         # it needs a moment to process the signal?
@@ -1047,14 +1091,14 @@ def test_server_sigkill_disconnect(trp):
         trp.assert_equal("server disconnnected status",
                          (("disconnected",)), server_receive_queue.get())
 
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_removed([('tcp', 'connected')])
 
 def test_client_sigkill_disconnect(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
         
         os.kill(server_p.pid, signal.SIGKILL)
@@ -1062,7 +1106,7 @@ def test_client_sigkill_disconnect(trp):
         trp.assert_true("server process not running", is_process_exited_race(server_p.pid))
         trp.assert_equal("client disconnnected status",
                          (("disconnected",)), client_receive_queue.get())
-        assert_removed_connection(trp, client_p.pid, cli_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
 
 
 def test_split_message(trp):
@@ -1100,7 +1144,7 @@ def test_client_sends_half_message_kill_client(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
 
         msg_p = dill.dumps("hello")
         x = bytes(str(len(msg_p)), 'ascii') + bytes(':', 'ascii') + \
@@ -1113,18 +1157,16 @@ def test_client_sends_half_message_kill_client(trp):
 
         trp.assert_true("client process not running", is_process_exited_race(client_p.pid))
 
-        # TODO: RACE - retry
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_removed([('tcp', 'connected')])
 
-        check_bad_message_send(trp, server_receive_queue, "NetstringException")
+        check_bad_message_send(trp, server_receive_queue, "read_netstring")
 
 def test_client_sends_half_message_kill_server(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
-
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
         msg_p = dill.dumps("hello")
         x = bytes(str(len(msg_p)), 'ascii') + bytes(':', 'ascii') + \
             msg_p + bytes(',', 'ascii')
@@ -1135,11 +1177,12 @@ def test_client_sends_half_message_kill_server(trp):
         os.kill(server_p.pid, signal.SIGKILL)
 
         trp.assert_true("server process not running", is_process_exited_race(server_p.pid))
-        
-        time.sleep(short_wait)
+
+        # deal with race like the other test
+        time.sleep(0.1)
         client_send_queue.put(("send-special", x[mid:]))
 
-        assert_removed_connection(trp, client_p.pid, cli_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
 
         trp.assert_equal("client gets disconnected status",
                         ("disconnected",),
@@ -1153,7 +1196,7 @@ def test_server_sends_half_message_kill_server(trp):
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        cli_sck = get_sockets(client_p.pid)
+        cli_sck = snapshot_sockets(trp, client_p.pid, f"{func_name()} client sockets")
 
         msg_p = dill.dumps("hello")
         x = bytes(str(len(msg_p)), 'ascii') + bytes(':', 'ascii') + \
@@ -1167,16 +1210,16 @@ def test_server_sends_half_message_kill_server(trp):
         trp.assert_true("server process not running", is_process_exited_race(server_p.pid))
         time.sleep(short_wait)
 
-        assert_removed_connection(trp, client_p.pid, cli_sck)
+        cli_sck.assert_removed([('tcp', 'connected')])
 
-        check_bad_message_send(trp, client_receive_queue, "NetstringException")
+        check_bad_message_send(trp, client_receive_queue, "read_netstring")
 
 def test_server_sends_half_message_kill_client(trp):
     with connected_client_server(trp) as \
          ((server_p, server_receive_queue, server_send_queue), \
           (client_p, client_receive_queue, client_send_queue), _):
 
-        srv_sck = get_sockets(server_p.pid)
+        srv_sck = snapshot_sockets(trp, server_p.pid, f"{func_name()} server sockets")
 
         msg_p = dill.dumps("hello")
         x = bytes(str(len(msg_p)), 'ascii') + bytes(':', 'ascii') + \
@@ -1187,12 +1230,20 @@ def test_server_sends_half_message_kill_client(trp):
 
         os.kill(client_p.pid, signal.SIGKILL)
 
-        time.sleep(short_wait)
-        server_send_queue.put(("send-special", x[mid:0]))
+        # there's a race where you expect to get an error sending
+        # the next message, but the closed socket signal from the kernel
+        # doesn't propagate through to the code fast enough, so it
+        # appears to succeed, when you test for it to fail
+        # the race causes a hang on the last assert
+        # at the bottom which checks for a not-connected message
+        # from the server (so it hangs and doesn't even give an
+        #   error when you write the data to the socket).
+        time.sleep(0.1)
+        server_send_queue.put(("send-special", x[mid:-1]))
 
         trp.assert_true("client process not running", is_process_exited_race(client_p.pid))
 
-        assert_removed_connection(trp, server_p.pid, srv_sck)
+        srv_sck.assert_removed([('tcp', 'connected')])
 
         trp.assert_equal("server disconnnected status",
                          (("disconnected",)), server_receive_queue.get())

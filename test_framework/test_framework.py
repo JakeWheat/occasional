@@ -108,6 +108,10 @@ from occ.utils import format_exception
 from tblib import pickling_support
 pickling_support.install()
 
+# set the timeout for each test case to finish
+# will be updated later to be more flexible
+temp_testcase_timeout = 1
+
 ##############################################################################
 
 # wrap the confusing python dbi api
@@ -545,7 +549,7 @@ class TimeoutException(Exception):
 def alarm_handler(signum, frame):
     raise TimeoutException()
     
-def testcase_worker_wrapper(tid, nm, f, addr, ig=None, timeout=1):
+def testcase_worker_wrapper(tid, nm, f, addr, ig=None, timeout=temp_testcase_timeout):
     x = None
     h = RemoteTestHandle(tid, addr)
     try:

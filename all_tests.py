@@ -3,15 +3,12 @@ import test_framework
 import tests.inbox_tests
 import tests.occasional_tests
 import tests.sck_tests
-import tests.shared_port
 import tests.spawn_tests
 import tests.test_area_server
+import tests.test_sysquery
 import tests.yeshup_tests
 all_tests = \
     (TestGroup(), 'all_tests', [
-        (TestGroup(), 'tests.get_proc_socket_info', [
-            (TestCase(), "no_tests_found", FailTestCaseBody("""no tests found in tests/get_proc_socket_info.py"""))
-        ]),
         (TestGroup(), 'tests.inbox_tests', [
             (TestCase(), 'test_self_send', tests.inbox_tests.test_self_send),
             (TestCase(), 'test_send_other_process', tests.inbox_tests.test_send_other_process),
@@ -84,13 +81,6 @@ all_tests = \
             (TestCase(), 'test_server_sends_half_message_kill_client', tests.sck_tests.test_server_sends_half_message_kill_client),
             (TestCase(), 'test_connect_to_missing_server', tests.sck_tests.test_connect_to_missing_server),
         ]),
-        (TestGroup(), 'tests.shared_port', [
-            (TestCase(), 'test_socket_passing', tests.shared_port.test_socket_passing),
-            (TestCase(), 'test_connect_list', tests.shared_port.test_connect_list),
-            (TestCase(), 'test_connect_start_list', tests.shared_port.test_connect_start_list),
-            (TestCase(), 'test_shared_port_server', tests.shared_port.test_shared_port_server),
-            (TestCase(), 'test_shared_port_server_heavy', tests.shared_port.test_shared_port_server_heavy),
-        ]),
         (TestGroup(), 'tests.spawn_tests', [
             (TestCase(), 'test_leave_function', tests.spawn_tests.test_leave_function),
             (TestCase(), 'test_python_exit_0', tests.spawn_tests.test_python_exit_0),
@@ -113,6 +103,10 @@ all_tests = \
         ]),
         (TestGroup(), 'tests.test_area_server', [
             (TestCase(), 'test_area_server', tests.test_area_server.test_area_server),
+        ]),
+        (TestGroup(), 'tests.test_sysquery', [
+            (TestCase(), 'test_simple_fdinfo', tests.test_sysquery.test_simple_fdinfo),
+            (TestCase(), 'test_processes_in_group', tests.test_sysquery.test_processes_in_group),
         ]),
         (TestGroup(), 'tests.yeshup_tests', [
             (TestCase(), 'test_simple_yeshup', tests.yeshup_tests.test_simple_yeshup),
