@@ -196,6 +196,7 @@ def spawn_with_socket(f):
     (server_s, client_s) = sck.socketpair()
 
     p = spawn_basic(bind(spawned_process_wrapper,client_s, f))
+    client_s.detach_close()
     return (p, server_s)
 
 

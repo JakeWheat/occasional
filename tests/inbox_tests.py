@@ -31,6 +31,8 @@ def spawn(f):
             f(ib)
         
     p = mspawn.spawn_basic(bind(wrap_f, rem,f))
+    rem.detach_close()
+
     addr = loc.receive_value()
     return (addr, p)
 
@@ -520,6 +522,7 @@ def test_non_listen_connection(trp):
                 except:
                     traceback.print_exc()
             p = mspawn.spawn_basic(bind(spawned_process_wrapper, remote_s, f))
+            remote_s.detach_close()
             ib.attach_socket(p.pid, local_s, True)
             return p.pid
 
@@ -552,7 +555,10 @@ def test_non_listen_connection(trp):
                 ib.send_socket(connect_addr, sideb)
                 ib.send(from_addr, ("have-a-connection", connect_addr))
                 ib.send_socket(from_addr, sidea)
+                sidea.detach_close()
+                sideb.detach_close()
             case x:
                 raise Exception(f"expected from,'connect-to',to, got {x}")
         x = ib.receive()
         trp.assert_equal("nonlistensocketconnect", (process_2, (process_1,'hello')), x)
+

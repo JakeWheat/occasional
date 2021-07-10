@@ -22,6 +22,7 @@ import threading
 import ctypes
 import tempfile
 import os
+import traceback
 import logging
 
 from tblib import pickling_support
@@ -101,6 +102,7 @@ class Socket:
                 sock = socket.socket(family=socket_type)
         self._socket = sock
         self._is_open = is_open
+        self._close_log = []
 
     def send_raw(self, bs):
         self._socket.sendall(bs)
@@ -109,6 +111,7 @@ class Socket:
         return self._is_open
 
     def close(self):
+        self._close_log.append("".join(traceback.format_list(traceback.extract_stack())))
         if self._is_open:
             logger.info(("close-socket",*log_socketinf(self._socket)))
             err = None
@@ -128,6 +131,22 @@ class Socket:
             # returns the error because I think it's common to not be
             # interested if there's an error
             return err
+
+    # when you want to pass a socket to another process so that that
+    # process then owns it, you want to close your local file
+    # decriptor (the fileno) but not affect the file description
+    # (which is the entry in the kernel for the open file which the
+    # other process still has access to via it's copy of the file
+    # descriptor, that you either got there by using fork, or by
+    # passing the file over a unix socket)
+    # hopefully this code achieves this
+    def detach_close(self):
+        logger.info(("detach-close-socket",*log_socketinf(self._socket)))
+        # closes the file descriptor locally
+        os.close(self._socket.fileno())
+        # makes sure python doesn't also try to close the file description
+        # when it garbage collects this socket
+        self._socket.detach()
 
 
     def connect(self,addr):
@@ -191,10 +210,10 @@ class Socket:
             pickled = dill.dumps(val)
             write_netstring(self._socket, pickled)
         except (NetstringException, dill.PicklingError, dill.UnpicklingError):
-            logger.info(("send_value", *log_socketinf(self._socket)), exc_info=1)
+            logger.info(("send_value", *log_socketinf(self._socket)), val, "\n\n".join(self._close_log), exc_info=1)
             raise
         except:
-            logger.info(("send_value", *log_socketinf(self._socket)), exc_info=1)
+            logger.info(("send_value", *log_socketinf(self._socket), val, "\n\n".join(self._close_log)), exc_info=1)
             self.close()
             raise
 

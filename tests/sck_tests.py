@@ -402,6 +402,8 @@ def run_server():
 
     p = spawn.spawn_basic(bind(server_process_fn,
                                server_receive_queue_in, server_send_queue_out))
+    server_receive_queue_in.detach_close()
+    server_send_queue_out.detach_close()
     return (p, server_receive_queue_out, server_send_queue_in)
 
 
@@ -528,6 +530,8 @@ def run_client():
 
     p = spawn.spawn_basic(bind(client_process_fn,
                                client_receive_queue_in, client_send_queue_out))
+    client_receive_queue_in.detach_close()
+    client_send_queue_out.detach_close()
 
     return (p, client_receive_queue_out, client_send_queue_in)
 

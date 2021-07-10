@@ -225,7 +225,15 @@ def _central(a,b,c):
                                 ib.send(from_addr, ("have-a-connection", connect_addr))
                                 ib.send_socket(from_addr, sidea)
                                 logger.info(("connection", from_addr, connect_addr))
-
+                            finally:
+                                try:
+                                    sidea.detach_close()
+                                except:
+                                    logger.info("closing socketpair for connection in central 1", exc_info=1)
+                                try:
+                                    sideb.detach_close()
+                                except:
+                                    logger.info("closing socketpair for connection in central 2", exc_info=1)
 
                         case _:
                             logger.error(f"unrecognised message sent to central: {x}")
@@ -375,6 +383,7 @@ def central_addr():
 def run_inbox(f):
     (retvala, retvalb) = sck.socketpair()
     p = mspawn.spawn_basic(target=_central, args=[retvalb,"function", f])
+    retvalb.detach_close()
     p.join()
     ret = retvala.receive_value()
     match ret:
@@ -414,6 +423,7 @@ check the central exits when the calling process exits for whatever reason
 def start():
     (loc,rem) = sck.socketpair()
     p = mspawn.spawn_basic(target=_central, args=[rem,"top-level", os.getpid()])
+    rem.detach_close()
     central_address = "central" # todo: get from central
     ib = make_user_process_inbox(central_address, loc)
     ib.central_process = p
