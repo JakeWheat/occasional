@@ -516,7 +516,6 @@ def test_non_listen_connection(trp):
                     new_ib = make_with_socket(csck, central_address, os.getpid(), [])
                     new_ib.connect = bind(Inbox.connect_using_central,
                                           new_ib, central_address)
-                    new_ib.central = central_address
                     x = f(new_ib)
                     csck.send_value(x)
                 except:

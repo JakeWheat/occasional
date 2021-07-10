@@ -152,6 +152,14 @@ def _central(a,b,c):
                 return mref
 
             ##########################
+
+            log_addr = spawn_process_internal(logging_process)
+            process_name_registry["_logging"] = log_addr
+            ib.add_socket_name(log_addr, "_logging")
+
+            occ.logging.set_logging_inbox(ib)
+
+            ##########################
             
             process_zero_exit = None
 
@@ -277,11 +285,14 @@ def _central(a,b,c):
                 except:
                     logger.info(("kill process on exit", pid), exc_info=1)
             [kill_it(pid) for pid in processes.keys()
-             if not (pid == process_zero and start_val[0] == "top-level")]
+             if (not (pid == process_zero and start_val[0] == "top-level")) \
+             and (not (pid == process_name_registry["_logging"]))]
 
             match start_val:
                case ("function", _, res_sock):
                    res_sock.send_value(process_zero_exit)
+            occ.logging.stop_logging(ib)
+            
             
     except:
         logger.exception("central exiting with unexpected exception")
@@ -338,6 +349,8 @@ def make_user_process_inbox(central_address, csck):
 def _spawned_wrapper(central_address, f, csck):
     occ.logging.initialize_logging()
     new_ib = make_user_process_inbox(central_address, csck)
+    new_ib.make_connection("_logging")
+    occ.logging.set_logging_inbox(new_ib)
 
     # close any uninvited sockets hanging around from pre-fork
     inbox_connections = list(new_ib.get_connections())
@@ -448,6 +461,47 @@ def receive(match=None, timeout=inbox.Infinity()):
 
 def slf():
     return _ib().addr
+
+##############################################################################
+
+# logging
+
+def log_prefix(s):
+    # print(f"LOG: **** {type(s)}")
+    if type(s) is str:
+        lines = s.splitlines()
+    elif type(s) is list:
+        splt = [l.splitlines() for l in s]
+        lines = [y for x in splt for y in x]
+    else:
+        lines = str(s).splitlines()
+    l1 = [f"LOG: {l}" for l in lines]
+    return "\n".join(l1)
+        
+# TODO: why is the logging process getting have-a-connection messages
+#   when running tests
+#   these should not leak out of the inbox internals
+
+def logging_process(ib):
+    # temp hack
+    ib.add_self_name("_logging")
+    while True:
+        try:
+            x = ib.receive()
+            if x == "exit":
+                break
+            s1 = str(x)
+            print(log_prefix(x))
+            try:
+                if x.exc_info is not None:
+                    print(log_prefix(traceback.format_exception(*x.exc_info)))
+            except AttributeError:
+                pass #print(f"ATT: {x}")
+            
+            print(f"LOG: {x}")
+        except:
+            print(f"exception in logging process")
+            traceback.print_exc()
 
 ##############################################################################
 
