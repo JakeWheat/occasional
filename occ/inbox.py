@@ -137,6 +137,12 @@ class Inbox:
             t.start()
         else:
             self.connection_handler(sock, raddr)
+
+    # used to get all the sockets so can avoid closing these ones on
+    # fork
+    def get_connections(self):
+        for x in self.connection_cache.values():
+            yield x
         
     # connection handler is used for outgoing and incoming connections
     # to loop reading incoming messages on the socket

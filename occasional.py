@@ -309,7 +309,61 @@ def make_user_process_inbox(central_address, csck):
 def _spawned_wrapper(central_address, f, csck):
     occ.logging.initialize_logging()
     new_ib = make_user_process_inbox(central_address, csck)
+    inbox_connections = list(new_ib.get_connections())
+    # close any uninvited sockets hanging around from pre-fork
+    scks = flatten(get_referenced_sockets(f) + inbox_connections)
+    logger.info(("spawn-keep-handles", scks))
+    _close_extra_filehandles(scks)
     return f(new_ib)
+
+#####################################
+
+# there's no way to set a file handle as noinherit on fork, only on exec
+# boooo
+def _close_extra_filehandles(scks):
+    dont_close = [0,1,2]
+    for s in scks:
+        dont_close.append(s._socket.fileno())
+    to_close = []
+    for fdp in os.listdir(f"/proc/{os.getpid()}/fd/"):
+          fd = int(os.path.basename(fdp))
+          if fd not in dont_close:
+              try:
+                  to_close.append(fd)
+              except OSError as e:
+                  if e.errno != 9:
+                      raise
+    if len(to_close) > 0:
+        logger.info(("spawn-close-handles", to_close))
+        for i in to_close:
+            try:
+                os.close(i)
+                pass
+            except OSError as e:
+                if e.errno != 9:
+                    raise
+
+def flatten(a):
+    ret = []
+    for x in a:
+        if type(x) is list:
+            ret = ret + flatten(x)
+        else:
+            ret.append(x)
+    return ret
+        
+# go through an f and args, and find any referenced sockets
+# it knows how to look through the args of functions to see if they're sockets
+# it also knows how to descend into functools.partial
+# it doesn't know how to look inside arrays or objects
+def get_referenced_sockets(x):
+    if isinstance(x, functools.partial):
+        return get_referenced_sockets(x.func) + \
+                      [get_referenced_sockets(a) for a in x.args]
+    elif type(x) == sck.Socket:
+        return [x]
+    else:
+        return []
 
 
 
