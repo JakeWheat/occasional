@@ -89,7 +89,6 @@ import traceback
 import argparse
 import re
 import queue
-import multiprocessing
 import threading
 import sqlite3
 import os
@@ -731,11 +730,11 @@ def do_test_run(all_tests, glob, test_patterns, hide_successes, num_jobs):
                     match t:
                         case (TestCase(), tid, parent_id, nm, FailTestCaseBody()):
                             f = lambda trp: trp.fail(t[4].msg)
-                            p = spawn.spawn(bind(testcase_worker_wrapper, t[1], t[3], f, srv.addr))
+                            p = spawn.spawn_with_socket(bind(testcase_worker_wrapper, t[1], t[3], f, srv.addr))
                             num_running += 1
                             return True
                         case (TestCase(), tid, parent_id, nm, fn):
-                            p = spawn.spawn(bind(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
+                            p = spawn.spawn_with_socket(bind(testcase_worker_wrapper, t[1], t[3], t[4], srv.addr))
                             num_running += 1
                             return True
             except StopIteration:

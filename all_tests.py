@@ -30,6 +30,7 @@ all_tests = \
             (TestCase(), 'test_non_listen_connection', tests.inbox_tests.test_non_listen_connection),
         ]),
         (TestGroup(), 'tests.occasional_tests', [
+            (TestCase(), 'test_very_trivial_run', tests.occasional_tests.test_very_trivial_run),
             (TestCase(), 'test_trivial_run', tests.occasional_tests.test_trivial_run),
             (TestCase(), 'test_system_exit_0', tests.occasional_tests.test_system_exit_0),
             (TestCase(), 'test_ping_cs', tests.occasional_tests.test_ping_cs),

@@ -166,11 +166,6 @@ class Socket:
                                  .to_bytes(Socket.c_int_size, byteorder='little')
                                )])
         logger.info(("send-sock",*log_socketinf(sock_to_send._socket)))
-        # todo: what are you supposed to do here to release the socket
-        # resources in the local process, while leaving the socket
-        # connected fine in the recipient process
-        # sock_to_send.close()
-        # maybe it's as simple as closing the socket without doing a shutdown
 
     # sending and receiving python values using dill
     def receive_value(self):
@@ -271,11 +266,6 @@ class SocketServer:
         return self.listen_sock.is_open()
 
     def close(self):
-        # TODO: every time close is called, save the traceback
-        # the first one will be the one where close actually closes
-        # then if any socket operation is done on the close socket
-        # report these tracebacks also
-        # it's still a problem when os.close on the file handle was used
         if self.listen_sock is not None:
             logger.info(("close-listen-sock",*log_socketinf(self.listen_sock._socket)))
             self.listen_sock.close()

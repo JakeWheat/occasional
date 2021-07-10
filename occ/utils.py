@@ -15,6 +15,7 @@ class ContextException(Exception):
 
 def reraise_with_context(ctx):
     e = sys.exc_info()[1]
+    # TODO: what about type(e): e.msg for the first item
     raise ContextException((str(e), ctx)) from e
 
 def format_exception(e):

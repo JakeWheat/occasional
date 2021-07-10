@@ -48,8 +48,6 @@ a single exit value for a process.
 
 """
 
-import multiprocessing
-import occ.multiprocessing_wrap as multiprocessing_wrap
 import sys
 import signal
 import occ.sck as sck
@@ -57,7 +55,113 @@ import traceback
 import occ.yeshup as yeshup
 import dill
 import os
+import functools
+
+bind = functools.partial
+
+import logging
+logger = logging.getLogger(__name__)
+
 from tblib import pickling_support
+
+
+##############################################################################
+
+# spawn basic
+
+# some code to wrap fork which allows you to run a function in the new
+# process which you supply which makes the code using it a little more
+# direct and clear than unadorned fork, and reproduces the process exit
+# behaviour of running a top level python process wrt signals, exit codes
+# when you call join on the fork.
+
+######################################
+
+# client side code for launched processes
+
+# how can tell python that this function will never return e.g. for
+# garbage collection purposes. although not sure how useful this is
+def _launched_process(target, args=[]):
+    try:
+
+        #print(f"{os.getpid()} running {target}")
+        target(*args)
+        #print(f"in child {os.getpid()} exit 0")
+        #print(f"exiting {os.getpid()}")
+        os._exit(0)
+    except SystemExit as e:
+        """
+Duplicate main Python behaviour:
+If the value is an integer, it specifies the system exit status
+(passed to C’s exit() function); if it is None, the exit status is
+zero; if it has another type (such as a string), the object’s value is
+printed and the exit status is one.
+
+"""
+        if e.code is None:
+            #print(f"exiting {os.getpid()}")
+            os._exit(0)
+        elif type(e.code) is int:
+            #print(f"exiting {os.getpid()}")
+            os._exit(e.code)
+        else:
+            #print(f"exiting {os.getpid()}")
+            #print(e.code)
+            os._exit(1)
+    except:
+        traceback.print_exc()
+        #print(f"in child {os.getpid()} exit 1")
+    finally:
+        #print(f"exiting {os.getpid()}")
+        os._exit(1)
+
+                  
+######################################
+
+class _Forker:
+    def __init__(self, pid):
+        self.pid = pid
+        self.exitcode = None
+
+    def join(self):
+        if self.exitcode is not None:
+            return self.exitcode
+        #print(f"joining {self.pid}")
+        status = os.waitid(os.P_PID, self.pid, os.WEXITED)
+        #print(f"join status {status}")
+        if status.si_code == os.CLD_EXITED:
+            #print(f"join thing returning {status.si_status}")
+            self.exitcode = status.si_status 
+        elif status.si_code == os.CLD_KILLED:
+            #print(f"join thing returning {-status.si_status}")
+            # mimic old exit code
+            self.exitcode = -status.si_status
+        else:
+            raise Exception(f"internal error, expected CLD_EXITED or CLD_KILLED, got {status.si_code}")
+        return self.exitcode
+
+def spawn_basic(target, args=[]):
+    pid = os.fork()
+    if pid == 0:
+        #print(f"started {os.getpid()} {get_name(target)}")
+        #print(get_name(target))
+
+        _launched_process(target, args)
+
+    else:
+        return _Forker(pid)
+
+# TODO: write direct tests for this
+
+##############################################################################
+
+# spawn with socket
+
+# this is a fork which passes the forked process one end of a
+# socketpair and returns the other, and also comes with convenience
+# functions to allow using this socket to return a value more rich
+# than posix (which is just a 8 byte int, and 0 is the only value that
+# traditionally represents success)
 
 @pickling_support.install
 class ExitVal(Exception):
@@ -87,22 +191,11 @@ def spawned_process_wrapper(client_s, f):
     if p_res is not None:
         client_s.send_value(p_res)
        
-def spawn(f, daemon=False, ctx=None):
+def spawn_with_socket(f):
 
-    # how to spawn a process? There is a problem:
-    # multiprocessing uses the regular pickle, which doesn't support
-    # all the messages want to send (complex closures) that dill does support
-    # but can't send sockets using dill ...
-    # solution: launch the multiprocessing process with the socket,
-    # and the rest of the code with dill manually applied
-    # then undill it in the child process manually
-    
     (server_s, client_s) = sck.socketpair()
 
-    p = multiprocessing_wrap.start_process(target=spawned_process_wrapper,
-                                           args=[client_s, f],
-                                           daemon=daemon,
-                                           ctx=ctx)
+    p = spawn_basic(bind(spawned_process_wrapper,client_s, f))
     return (p, server_s)
 
 

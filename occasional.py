@@ -1,6 +1,4 @@
 
-import multiprocessing
-import occ.multiprocessing_wrap as multiprocessing_wrap
 import os
 import sys
 import traceback
@@ -43,8 +41,6 @@ process exits, central services notices and exits the system and
 returns the result value of the initial user process
 
 """
-
-_forkit = multiprocessing.get_context('forkserver')
 
 @pickling_support.install
 class _SendNotFoundException(Exception):
@@ -118,8 +114,7 @@ def _central(a,b,c):
             def spawn_process_internal(f):
                 if not callable(f):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
-                (p, sock) = mspawn.spawn(bind(_spawned_wrapper, central_address, f),
-                                         ctx=_forkit)
+                (p, sock) = mspawn.spawn_with_socket(bind(_spawned_wrapper, central_address, f))
                 logger.info(("spawn", p.pid, str(f)))
                 ib.attach_socket(p.pid, sock, True)
                 processes[p.pid] = (p, None)
@@ -330,6 +325,7 @@ def _ib():
 def _global_wrapper(f, ib):
     # something doesn't work with the global thing
     # maybe related to dill or multiprocessing or something
+    # todo: test it again now not using multiprocessing any more
     #global occasional_inbox
     #occasional_inbox = ib
     _set_global_inbox(ib)
@@ -378,10 +374,7 @@ def central_addr():
 
 def run_inbox(f):
     (retvala, retvalb) = sck.socketpair()
-    # protext against the user code that called this having threads
-    # and stuff that isn't fork friendly
-    ctx = multiprocessing.get_context('spawn')
-    p = multiprocessing_wrap.start_process(target=_central, args=[retvalb,"function", f])
+    p = mspawn.spawn_basic(target=_central, args=[retvalb,"function", f])
     p.join()
     ret = retvala.receive_value()
     match ret:
@@ -420,12 +413,9 @@ check the central exits when the calling process exits for whatever reason
 
 def start():
     (loc,rem) = sck.socketpair()
-    ctx = multiprocessing.get_context('spawn')
-    p = multiprocessing_wrap.start_process(target=_central, args=[rem,"top-level", os.getpid()])
-    # make the inbox
+    p = mspawn.spawn_basic(target=_central, args=[rem,"top-level", os.getpid()])
     central_address = "central" # todo: get from central
     ib = make_user_process_inbox(central_address, loc)
-    # save the p in it
     ib.central_process = p
     _set_global_inbox(ib)
     # exit occasional on exit if running in repl
@@ -435,12 +425,8 @@ def start():
         atexit.register(stop)
 
 def stop():
-    # tell the central to exit
     send(central_addr(), ("top-level-exit",))
-    # join the p
     _ib().central_process.join()
-    # close the local inbox
     _ib().close()
-    # delete the inbox entry
     _del_global_inbox()
 

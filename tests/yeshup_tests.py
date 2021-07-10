@@ -59,7 +59,6 @@ demonstrate if a grandchild launch doesn't participate in the yeshup,
 recreate and test the original yeshup wrapper so it runs an arbitrary
 exe
 
-test yeshup works with the various multiprocessing spawn options
 
 """
 
@@ -68,11 +67,11 @@ import datetime
 import sys
 import subprocess
 import os
-import multiprocessing
 import threading
 import queue
 import signal
 import occ.yeshup as yeshup
+import occ.spawn as spawn
 
 def run_it(cmd):
     p = subprocess.Popen(cmd)
@@ -194,8 +193,7 @@ def launch_basic():
         #    print(line)
         time.sleep(100)
         #print("here")
-    p = multiprocessing.Process(target=child_process)
-    p.start()
+    p = spawn.spawn_basic(target=child_process)
     p.join()
     #print("exiting launch basic")
 

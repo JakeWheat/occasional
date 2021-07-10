@@ -4,7 +4,7 @@
 test plan:
 
 start with simple demos:
-run process with multiprocessing
+run process using fork
   exit with 0, exit with non 0, use signal to exit
   -> capture and check these values
 then do the same with an external exe
@@ -41,7 +41,7 @@ from tblib import pickling_support
 def spawn_ignore(f):
     def ignore_f(f, _):
         return f()
-    return spawn(bind(ignore_f, f))
+    return spawn_with_socket(bind(ignore_f, f))
         
 
 def helper_test_function(trp, msg, f, v, ex):
@@ -184,7 +184,7 @@ def test_process_key_exit_0(trp):
     def f(_):
         #sck.send_value(os.getpid())
         os._exit(0)
-    x = spawn(f)
+    x = spawn_with_socket(f)
     pid = get_spawn_pid(x)
     #pid = x[1].receive_value()
     res = wait_spawn(x)

@@ -168,13 +168,6 @@ logging.py
 
 Some support code for using Python logging in this system.
 
-multiprocessing_wrap.py
------------------------
-
-Simple wrapper around multiprocessing to make it easy to spawn
-processes which use the multiprocessing infrastructure to pass sockets
-when forking, and use the dill library to pickle everything else.
-
 
 sck.py
 ------
@@ -212,3 +205,4 @@ test frameworks which met these requirements:
 * test cases are flexible/ first class (maybe some have this, didn't
   find any info in any docs I looked at)
 * ability to do test assertions concurrently in multiple processes
+

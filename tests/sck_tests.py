@@ -250,7 +250,6 @@ import socket
 import dill
 import sys
 import traceback
-import multiprocessing
 import time
 import os
 import signal
@@ -258,10 +257,12 @@ import contextlib
 import occ.sck as sck
 import occ.yeshup as yeshup
 import traceback
-import occ.multiprocessing_wrap as multiprocessing_wrap
-
+import occ.spawn as spawn
 from occ.utils import format_exception
 import occ.sysquery as sysquery
+import functools
+bind = functools.partial
+
 
 short_wait = 0.001
 
@@ -387,8 +388,6 @@ def server_process_fn(server_receive_queue, server_send_queue):
     finally:
         pass #print("server exiting")        
 
-multiprocessing_spawn = 'forkserver'
-
 # temp hack for transition
 def make_queue_socketpair():
     (qin, qout) = sck.socketpair()
@@ -401,11 +400,8 @@ def run_server():
     (server_receive_queue_in,server_receive_queue_out) = make_queue_socketpair()
     (server_send_queue_in,server_send_queue_out) = make_queue_socketpair()
 
-    ctx = multiprocessing.get_context(multiprocessing_spawn)
-    p = multiprocessing_wrap.start_process(target=server_process_fn,
-                                           args=[server_receive_queue_in, server_send_queue_out],
-                                           daemon=True, ctx=ctx)
-
+    p = spawn.spawn_basic(bind(server_process_fn,
+                               server_receive_queue_in, server_send_queue_out))
     return (p, server_receive_queue_out, server_send_queue_in)
 
 
@@ -530,11 +526,8 @@ def run_client():
     (client_receive_queue_in,client_receive_queue_out) = make_queue_socketpair()
     (client_send_queue_in,client_send_queue_out) = make_queue_socketpair()
 
-    ctx = multiprocessing.get_context(multiprocessing_spawn)
-    
-    p = multiprocessing_wrap.start_process(target=client_process_fn,
-                                           args=[client_receive_queue_in, client_send_queue_out],
-                                           daemon=True)
+    p = spawn.spawn_basic(bind(client_process_fn,
+                               client_receive_queue_in, client_send_queue_out))
 
     return (p, client_receive_queue_out, client_send_queue_in)
 

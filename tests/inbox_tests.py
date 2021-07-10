@@ -1,6 +1,5 @@
 
-import multiprocessing
-import occ.multiprocessing_wrap as multiprocessing_wrap
+import occ.spawn as mspawn
 import time
 import datetime
 import occ.yeshup as yeshup
@@ -31,7 +30,7 @@ def spawn(f):
             sck.send_value(ib.addr)
             f(ib)
         
-    p = multiprocessing_wrap.start_process(target=wrap_f, args=[rem,f])
+    p = mspawn.spawn_basic(bind(wrap_f, rem,f))
     addr = loc.receive_value()
     return (addr, p)
 
@@ -502,7 +501,6 @@ def test_non_listen_connection(trp):
     # tell the first process to send a message to the second process
     # locally it will co-ordinate the connection
 
-    #forkit = multiprocessing.get_context('forkserver')
     central_address = "central"
     with make_simple(central_address) as ib:
 
@@ -521,7 +519,7 @@ def test_non_listen_connection(trp):
                     csck.send_value(x)
                 except:
                     traceback.print_exc()
-            p = multiprocessing_wrap.start_process(target=spawned_process_wrapper, args=[remote_s, f])
+            p = mspawn.spawn_basic(bind(spawned_process_wrapper, remote_s, f))
             ib.attach_socket(p.pid, local_s, True)
             return p.pid
 

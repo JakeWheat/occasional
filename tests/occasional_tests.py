@@ -9,6 +9,14 @@ bind = functools.partial
 
 import occasional
 
+def test_very_trivial_run(trp):
+    def f(ib):
+        pass
+
+    v = occasional.run_inbox(f)
+    trp.assert_equal("return val", ('ok', ('exitcode', 0)), v)
+
+
 def test_trivial_run(trp):
     def f(ib):
         return "hello"
