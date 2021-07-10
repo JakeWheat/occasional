@@ -55,6 +55,8 @@ import contextlib
 import queue
 import datetime
 import threading
+import os
+import traceback
 
 import functools
 bind = functools.partial
@@ -81,7 +83,12 @@ class Inbox:
         # and to reuse incoming connections to send to since
         # the connection handshake tells it the address of the
         # connecting process
+        # the connection cache is a map from network address/pid
+        #   to socket connection
         self.connection_cache = {}
+        # partial support for registered names for processes
+        # so you can send to a name instead of an address/pid
+        self.connection_names = {}
         self.srv = None
         self.addr = None
         self.lock = threading.RLock()
@@ -91,6 +98,7 @@ class Inbox:
         else:
             self.connect = connect
         self.connection_flag = None
+        self.self_names = []
 
     def close(self):
         if self.srv is not None:
@@ -109,22 +117,36 @@ class Inbox:
 
     def get_connection(self,nm):
         with self.lock:
-            return self.connection_cache[nm]
+            if nm in self.connection_names:
+                return self.connection_cache[self.connection_names[nm]]
+            else:
+                return self.connection_cache[nm]
 
     def has_connection(self,nm):
         with self.lock:
-            return nm in self.connection_cache
+            return nm in self.connection_names or nm in self.connection_cache
         
     def remove_connection(self,nm):
+        # remove all names and the entry in the connection cache
         with self.lock:
+            if nm in self.connection_names:
+                nm = self.connection_names[nm]
+            del_names = []
+            for k in self.connection_names:
+                if self.connection_names[k] == nm:
+                    del_names.append(k)
+            for k in del_names:
+                del self.connection_names[k]
             del self.connection_cache[nm]
 
     # attach an already connected socket
     # this means this socket can be used to send messages to
     # it's address, and it will be read from using the usual thread
-    def attach_socket(self, raddr, sock, new_thread):
+    def attach_socket(self, raddr, sock, names, new_thread):
         with self.lock:
             self.connection_cache[raddr] = sock
+            for n in names:
+                self.connection_names[n] = raddr
         # run receive loop in this thread or a new thread:
         # if running in this thread, attach_socket will return
         # when the connection is closed
@@ -144,6 +166,13 @@ class Inbox:
         for x in self.connection_cache.values():
             yield x
         
+    def add_socket_name(self, raddr, name):
+        with self.lock:
+             self.connection_names[name] = raddr
+
+    def add_self_name(self, name):
+        self.self_names.append(name)
+
     # connection handler is used for outgoing and incoming connections
     # to loop reading incoming messages on the socket
     def connection_handler(self, sock, raddr):
@@ -157,10 +186,10 @@ class Inbox:
                         if self.disconnect_notify:
                             self.q.put(("client-disconnected", raddr))
                         break
-                    case ("have-a-connection", new_raddr):
+                    case ("have-a-connection", new_raddr, nms):
                         rsock = sock.receive_sock()
-                        self.attach_socket(new_raddr, rsock, True)
-                        if self.connection_flag == new_raddr:
+                        self.attach_socket(new_raddr, rsock, nms, True)
+                        if self.connection_flag == new_raddr or self.connection_flag in nms:
                             self.q.put(x)
                     case ("connection-error", _):
                         # pass back to calling thread
@@ -177,7 +206,7 @@ class Inbox:
     def default_connect(self, my_addr, connect_addr):
         sock = sck.connected_socket(connect_addr)
         sock.send_value(("hello my name is", my_addr))
-        self.attach_socket(connect_addr, sock, True)
+        self.attach_socket(connect_addr, sock, [], True)
         return sock
 
     # used for new incoming connections made using the default
@@ -188,7 +217,7 @@ class Inbox:
         # the handshake tells us what address it's for
         match sock.receive_value():
             case ("hello my name is", raddr):
-                self.attach_socket(raddr, sock, False)
+                self.attach_socket(raddr, sock, [], False)
             case x:
                 logger.error(f"got bad handshake: {x}")
 
@@ -196,19 +225,27 @@ class Inbox:
         self.send(central_addr, (my_addr, "connect-to", connect_addr))
         def m(x):
             match x:
-                case ("have-a-connection", a) if a == connect_addr:
+                case ("have-a-connection", a, nms) if a == connect_addr or connect_addr in nms:
                     return True
-                case ("have-a-connection", a):
-                    raise Exception(f"unexpected connection from {a}, expecting {connect_addr}")
+                case ("have-a-connection", a, nms):
+                    raise Exception(f"unexpected connection from {a}, expecting {connect_addr} ({nms})")
                 case ("connection-error", e):
                     raise Exception(e)
         self.receive(match=m)
         sock = self.get_connection(connect_addr)
         return sock
 
+    # user function to create a connection
+    def make_connection(self, tgt):
+        #with self.lock:
+            if tgt not in self.connection_cache:
+                self.connection_flag = tgt
+                self.connect(self.addr, tgt)
+                self.connection_flag = None
+
     
     def send(self, tgt, msg):
-        if tgt == self.addr:
+        if tgt == self.addr or tgt in self.self_names:
             # self send, skip pickling and sending over a socket
             self.q.put(msg)
         else:
@@ -395,12 +432,12 @@ def make_with_server(disconnect_notify=False):
 
 # create a inbox which has a master socket connection
 # and connects via this socket without listening
-def make_with_socket(ms, nm, sladdr, disconnect_notify=False):
+def make_with_socket(ms, nm, sladdr, nms, disconnect_notify=False):
     #assert(type(nm) is str)
     #assert(type(sladdr) is str)
     s = Inbox(disconnect_notify=disconnect_notify)
     s.addr = sladdr
-    s.attach_socket(nm, ms, True)
+    s.attach_socket(nm, ms, nms, True)
     return s
 
 # make an inbox with no connections and no listener

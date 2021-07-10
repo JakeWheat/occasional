@@ -503,7 +503,7 @@ def test_non_listen_connection(trp):
     # tell the first process to send a message to the second process
     # locally it will co-ordinate the connection
 
-    central_address = "central"
+    central_address = "_central"
     with make_simple(central_address) as ib:
 
         # create a process with a socketpair back here
@@ -513,7 +513,7 @@ def test_non_listen_connection(trp):
             def spawned_process_wrapper(csck, f):
                 try:
                     yeshup.yeshup_me()
-                    new_ib = make_with_socket(csck, central_address, os.getpid())
+                    new_ib = make_with_socket(csck, central_address, os.getpid(), [])
                     new_ib.connect = bind(Inbox.connect_using_central,
                                           new_ib, central_address)
                     new_ib.central = central_address
@@ -523,7 +523,7 @@ def test_non_listen_connection(trp):
                     traceback.print_exc()
             p = mspawn.spawn_basic(bind(spawned_process_wrapper, remote_s, f))
             remote_s.detach_close()
-            ib.attach_socket(p.pid, local_s, True)
+            ib.attach_socket(p.pid, local_s, [], True)
             return p.pid
 
 
@@ -551,9 +551,9 @@ def test_non_listen_connection(trp):
         match ib.receive():
             case (from_addr, "connect-to", connect_addr):
                 (sidea, sideb) = sck.socketpair()
-                ib.send(connect_addr, ("have-a-connection", from_addr))
+                ib.send(connect_addr, ("have-a-connection", from_addr, []))
                 ib.send_socket(connect_addr, sideb)
-                ib.send(from_addr, ("have-a-connection", connect_addr))
+                ib.send(from_addr, ("have-a-connection", connect_addr, []))
                 ib.send_socket(from_addr, sidea)
                 sidea.detach_close()
                 sideb.detach_close()

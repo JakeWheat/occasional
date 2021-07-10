@@ -34,7 +34,7 @@ def test_system_exit_0(trp):
     
 def test_ping_cs(trp):
     def f(trp, ib):
-        ib.send(ib.central, (ib.addr, "ping"))
+        ib.send("_central", (ib.addr, "ping"))
         x = ib.receive()
         trp.assert_equal("pong", ("pong",), x)
     occasional.run_inbox(bind(f, trp))
@@ -173,7 +173,7 @@ def test_monitoring_proc_exits(trp):
                 pass
             case x:
                 return x
-        ib.send(ib.central, (ib.addr, "ping"))
+        ib.send("_central", (ib.addr, "ping"))
         x = ib.receive()
         return x
     v = occasional.run_inbox(main_proc)
@@ -317,7 +317,7 @@ def test_sub_process_killed(trp):
     # and capture the stdout/stderr and check for messages
     trp.tpass("test_error_no_monitor")
 
-from occasional import send, receive, spawn, slf, central_addr, spawn_monitor
+from occasional import send, receive, spawn, slf, spawn_monitor
 # something weird is happening when you write occasional.receive
 # instead of importing it. Maybe dill is doing something really
 # odd with the recursive pickling
@@ -333,7 +333,7 @@ def test_implicit(trp):
                send(frm, ("got", x))
     def f(trp):
         try:
-            send(central_addr(), (slf(), "ping"))
+            send("_central", (slf(), "ping"))
             x = receive()
             trp.assert_equal("pong", ("pong",), x)
             gpid = spawn(g)
@@ -353,7 +353,7 @@ def test_top_level(trp):
                send(frm, ("got", x))
     try:
         occasional.start()
-        send(central_addr(), (slf(), "ping"))
+        send("_central", (slf(), "ping"))
         x = receive()
         trp.assert_equal("pong", ("pong",), x)
         gpid = spawn(g)

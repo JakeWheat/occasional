@@ -80,6 +80,7 @@ def _central(a,b,c):
         ib = None
         yeshup.yeshup_me()
         occ.logging.initialize_logging()
+        logger.info(("central_start", os.getpid()))
         # work around limitation with the spawn args
         # the arg is deconstructed and reordered because
         # the spawn only allows sockets in the first arguments
@@ -90,7 +91,7 @@ def _central(a,b,c):
                 start_val = ("top-level", pid, sock)
             case _:
                 raise Exception(f"internal error - bad start val {(a,b,c)}")
-        central_address = "central"
+        central_address = "_central"
         def no_connect(_, connect_addr):
             raise _SendNotFoundException(connect_addr)
 
@@ -111,12 +112,35 @@ def _central(a,b,c):
             next_mref = 0
             process_monitoring = []
 
+            process_zero = None
+
+            # simple name registration
+            # todo: expose it to user code to add and remove registrations
+            #   avoid processes making more than one connection because the
+            #   other process has more than one name (including its pid)
+            #   should add types to distinguish between the pid addresses
+            #   and names
+            #   if you can name processes, the list needs to be maintained
+            #   when processes exit
+
+            process_name_registry = {"_central":os.getpid()}
+            def lookup_proc_by_name(nm):
+                if nm in process_name_registry:
+                    nm = process_name_registry[nm]
+                elif nm not in processes:
+                    raise Exception(f"process not found {nm} {processes}")
+                p_names = []
+                for k in process_name_registry:
+                    if process_name_registry[k] == nm:
+                        p_names.append(k)
+                return (nm,p_names)
+            
             def spawn_process_internal(f):
                 if not callable(f):
                     raise Exception(f"spawn function is not callable {type(f)} {f}")
                 (p, sock) = mspawn.spawn_with_socket(bind(_spawned_wrapper, central_address, f))
                 logger.info(("spawn", p.pid, str(f)))
-                ib.attach_socket(p.pid, sock, True)
+                ib.attach_socket(p.pid, sock, [], True)
                 processes[p.pid] = (p, None)
                 return p.pid
 
@@ -143,7 +167,7 @@ def _central(a,b,c):
                     processes[pid] = (None,None)
                     process_zero = pid
                     # add connection to local inbox
-                    ib.attach_socket(pid, sock, True)
+                    ib.attach_socket(pid, sock, [], True)
                 case _:
                     raise Exception(f"internal error: bad start_val {start_val}")
                     
@@ -161,35 +185,36 @@ def _central(a,b,c):
                             # skip join and getting the exit value
                             # if this is process zero in a top
                             # level run
-                            pe = processes[addr]
-                            if start_val[0] == "top-level" \
-                               and addr == process_zero:
-                                process_exit_val = None
-                            else:
-                                pe[0].join()
-                                process_exit_val = pe[1]
-                                if process_exit_val is None:
-                                    match mspawn.get_process_exitval(pe[0]):
-                                        case ("process-exit", _, v0, v1):
-                                            process_exit_val = (v0,v1)
-                                        case _:
-                                            logger.error(f"bad exit val: {x}")
-                            logger.info(("process-exit", pe[0].pid, process_exit_val))
-                            # if process zero, exit the central services
-                            if addr == process_zero:
-                                process_zero_exit = process_exit_val
-                                break
-                            # ping all the monitoring processes
-                            any_monitors = False
-                            for i in process_monitoring:
-                                if i[1] == addr:
-                                    any_monitors = True
-                                    safe_send(ib, i[0], ("down", i[2], i[1], process_exit_val))
-                            # clean up the process table
-                            del processes[addr]
-                            # clean up the monitoring table
-                            process_monitoring = [(p,m,r) for (p,m,r) in process_monitoring
-                                                  if p != addr and m != addr]
+                            if addr in processes:
+                                pe = processes[addr]
+                                if start_val[0] == "top-level" \
+                                   and addr == process_zero:
+                                    process_exit_val = None
+                                else:
+                                    pe[0].join()
+                                    process_exit_val = pe[1]
+                                    if process_exit_val is None:
+                                        match mspawn.get_process_exitval(pe[0]):
+                                            case ("process-exit", _, v0, v1):
+                                                process_exit_val = (v0,v1)
+                                            case _:
+                                                logger.error(f"bad exit val: {x}")
+                                logger.info(("process-exit", pe[0].pid, process_exit_val))
+                                # if process zero, exit the central services
+                                if addr == process_zero:
+                                    process_zero_exit = process_exit_val
+                                    break
+                                # ping all the monitoring processes
+                                any_monitors = False
+                                for i in process_monitoring:
+                                    if i[1] == addr:
+                                        any_monitors = True
+                                        safe_send(ib, i[0], ("down", i[2], i[1], process_exit_val))
+                                # clean up the process table
+                                del processes[addr]
+                                # clean up the monitoring table
+                                process_monitoring = [(p,m,r) for (p,m,r) in process_monitoring
+                                                      if p != addr and m != addr]
                         case ('top-level-exit',) if start_val[0] == "top-level":
                             break
                         case (ret, "ping"):
@@ -211,18 +236,23 @@ def _central(a,b,c):
                             logger.info(("connect", from_addr, connect_addr))
                             (sidea, sideb) = sck.socketpair()
                             try:
+                                cold = connect_addr
+                                (connect_addr, to_p_names) = lookup_proc_by_name(connect_addr)
+                                (_,from_p_names) = lookup_proc_by_name(from_addr)
+                                if connect_addr == os.getpid():
+                                    raise Exception(f"bad connect to central using {cold}")
+                                x = ib.send(connect_addr, ("have-a-connection", from_addr, from_p_names))
+                                ib.send_socket(connect_addr, sideb)
+                            except Exception as x:
                                 # there's a lot of things that need protection like this
                                 # in the central
-                                x = ib.send(connect_addr, ("have-a-connection", from_addr))
-                            except Exception as x:
-                                ib.send(from_addr, ("connection-error", f"send: process not found {x.addr}"))
+                                ib.send(from_addr, ("connection-error", f"send: process not found {connect_addr}"))
                             else:
                                 # todo: any of these 3 sends can fail because a process
                                 # has exited in the meantime, central should not break
                                 # when this happens, and if the calling process (from_addr)
                                 # is up, it should get notified
-                                ib.send_socket(connect_addr, sideb)
-                                ib.send(from_addr, ("have-a-connection", connect_addr))
+                                ib.send(from_addr, ("have-a-connection", connect_addr, to_p_names))
                                 ib.send_socket(from_addr, sidea)
                                 logger.info(("connection", from_addr, connect_addr))
                             finally:
@@ -295,10 +325,9 @@ def _spawn_monitor(central_addr, ib, f):
 # wrapper for the launched processes
 
 def make_user_process_inbox(central_address, csck):
-    new_ib = inbox.make_with_socket(csck, central_address, os.getpid())
+    new_ib = inbox.make_with_socket(csck, central_address, os.getpid(), ["_central"])
     new_ib.connect = bind(inbox.Inbox.connect_using_central,
                           new_ib, central_address)
-    new_ib.central = central_address
     new_ib.spawn_inbox = bind(_spawn_fun, central_address, new_ib)
     new_ib.spawn_inbox_monitor = bind(_spawn_monitor, central_address, new_ib)
     return new_ib
@@ -309,11 +338,13 @@ def make_user_process_inbox(central_address, csck):
 def _spawned_wrapper(central_address, f, csck):
     occ.logging.initialize_logging()
     new_ib = make_user_process_inbox(central_address, csck)
-    inbox_connections = list(new_ib.get_connections())
+
     # close any uninvited sockets hanging around from pre-fork
+    inbox_connections = list(new_ib.get_connections())
     scks = flatten(get_referenced_sockets(f) + inbox_connections)
     logger.info(("spawn-keep-handles", scks))
     _close_extra_filehandles(scks)
+
     return f(new_ib)
 
 #####################################
@@ -418,10 +449,6 @@ def receive(match=None, timeout=inbox.Infinity()):
 def slf():
     return _ib().addr
 
-def central_addr():
-    return _ib().central
-
-
 ##############################################################################
 
 # launcher
@@ -478,7 +505,7 @@ def start():
     (loc,rem) = sck.socketpair()
     p = mspawn.spawn_basic(target=_central, args=[rem,"top-level", os.getpid()])
     rem.detach_close()
-    central_address = "central" # todo: get from central
+    central_address = "_central" # todo: get from central
     ib = make_user_process_inbox(central_address, loc)
     ib.central_process = p
     _set_global_inbox(ib)
@@ -489,7 +516,7 @@ def start():
         atexit.register(stop)
 
 def stop():
-    send(central_addr(), ("top-level-exit",))
+    send("_central", ("top-level-exit",))
     _ib().central_process.join()
     _ib().close()
     _del_global_inbox()
