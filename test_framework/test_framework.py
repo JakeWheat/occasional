@@ -103,7 +103,7 @@ bind = functools.partial
 import occ.sck as sck
 import occ.spawn as spawn
 import occ.yeshup as yeshup
-from occ.utils import sort_list, format_exception
+from occ.utils import format_exception
 
 from tblib import pickling_support
 pickling_support.install()
@@ -288,6 +288,9 @@ def make_test_case(nm, f):
 # first, look for the all_tests value
 # if it's missing, look for all the top level XX_test functions
 
+def get_line_number_of_function(func):
+    return func.__code__.co_firstlineno
+
 def get_module_test_tree(mod):
     try:
         x = getattr(mod, "all_tests")
@@ -299,6 +302,8 @@ def get_module_test_tree(mod):
            if x.startswith('test_')]
     if tfs == []:
         return None
+    # list tests in order they appear in the source
+    tfs = sorted(tfs, key=lambda x: get_line_number_of_function(x))
     tcs = [make_test_case(tf.__name__, tf) for tf in tfs]
     x = make_test_group(mod.__name__, tcs)
     # TODO: get the test case functions in the order they are in the
@@ -310,7 +315,7 @@ def get_modules_tests_from_glob(glob_list):
     files = []
     for i in glob_list:
         files = files + glob.glob(i, recursive=True)
-    files = sort_list(list(set(files)))
+    files = sorted(set(files))
 
     def gfs(nm):
         mod = None
@@ -419,7 +424,7 @@ def create_tests_file(tree):
     ls = ff(1, tree, False)
     print("from test_framework import TestGroup,TestCase,FailTestCaseBody")
     print("import test_framework")
-    for i in sort_list(list(set(modules))):
+    for i in sorted(set(modules)):
         print(f"import {i}")
     for i in lines:
         print(i)
