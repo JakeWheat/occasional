@@ -81,6 +81,7 @@ the local inbox
 def _central(a,b,c):
 
     try:
+        ib = None
         yeshup.yeshup_me()
         occ.logging.initialize_logging()
         # work around limitation with the spawn args
@@ -96,7 +97,14 @@ def _central(a,b,c):
         central_address = "central"
         def no_connect(_, connect_addr):
             raise _SendNotFoundException(connect_addr)
-             
+
+        # todo: trace this stuff better
+        def safe_send(ib, tgt, msg):
+            try:
+                ib.send(tgt,msg)
+            except:
+                logger.info(("central error sending message", tgt, msg), exc_info=1)
+
         with inbox.make_simple(central_address, disconnect_notify=True,
                                connect=no_connect) as ib:
 
@@ -181,7 +189,7 @@ def _central(a,b,c):
                             for i in process_monitoring:
                                 if i[1] == addr:
                                     any_monitors = True
-                                    ib.send(i[0], ("down", i[2], i[1], process_exit_val))
+                                    safe_send(ib, i[0], ("down", i[2], i[1], process_exit_val))
                             # clean up the process table
                             del processes[addr]
                             # clean up the monitoring table
@@ -205,6 +213,7 @@ def _central(a,b,c):
                             except:
                                 ib.send(ret, ("spawn-error", sys.exc_info()[1]))
                         case (from_addr, "connect-to", connect_addr):
+                            logger.info(("connect", from_addr, connect_addr))
                             (sidea, sideb) = sck.socketpair()
                             try:
                                 # there's a lot of things that need protection like this
@@ -245,7 +254,12 @@ def _central(a,b,c):
         logger.exception("central exiting with unexpected exception")
         raise
     finally:
-        logger.info(("central_stop", os.getpid()))
+        try:
+            logger.info(("central_stop", os.getpid()))
+            if ib is not None:
+                safe_send(ib, "_logging", "exit")
+        except:
+            logger.exception("central final exiting")
     
 ##############################################################################
 
