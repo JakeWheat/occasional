@@ -1,24 +1,12 @@
-A demo system for running concurrent and distributed processes in
-Python. Status: pre-alpha
+A experiment in running concurrent processes in Python.
 
-Roadmap
-=======
+This experiment came to an end - I was eventually struggled too much
+trying to do this sort of work in Python. The spiritual successor is
+part of a new project, a programming language called Burdock:
+https://github.com/JakeWheat/burdock/
 
-More examples
-
-Distributed version (using regular spawn, send, monitor to remote
-processes)
-
-Networking lib similar to gen_tcp
-
-Exe running lib focused on running all sorts of exes and pipelines,
-possibly some expect-like support too (to be able to implement
-automated tests for interactive exes)
-
-Much more robust concurrency based test framework
-
-Install
-=======
+Try it out
+==========
 
 install Python 3.10 or later
   -> before 3.10 is released you need the beta version
